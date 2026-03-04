@@ -561,1024 +561,83 @@
 
 <datalist id="dxList"></datalist>
 
-<script>
-  // ================== CONFIG ==================
-  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxRefm-UXTjfa4Zo3ZULHaEh39aZchEdYMzTNn7lR3kFqji0QVgizHF6uo9c6geBpE/exec";
 
-  let currentSheet = "";
-  let carryDT, newDT, sithiChart, saiChart;
-  let lastData = [];
-  let lastDataByRowId = new Map();
 
-  // Table filter state
-  const tableState = {
-    carry: { filter: 'ALL', search: '' },
-    new: { filter: 'ALL', search: '' }
-  };
 
-  // Report charts instance
-  let repChartIn, repChartOut, repChartLOS;
-  let lastTriggerEl = null;
 
-  // Nurse ID
-  const NURSE_KEY = "cloudWard.nurseId";
 
-  // ✅ Discharge modal state (สำคัญ: ล็อก patientStatus ไม่ให้เปลี่ยน)
-  let disItem = null;
 
-  // ================== API ==================
-  async function callApi(action, data = null) {
-    const r = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      body: JSON.stringify({ action, data })
-    });
-    const res = await r.json();
-    if (res.status === 'success') return res.data;
-    throw new Error(res.message);
-  }
+  
+<div class="modal fade" id="dischargeModal">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
 
-  // ================== Nurse ID ==================
-  function getNurseId() {
-    return (localStorage.getItem(NURSE_KEY) || "").trim();
-  }
-  function renderNurseId() {
-    const v = getNurseId();
-    document.getElementById('nurseIdText').innerText = v ? v : "ยังไม่ตั้งค่า";
-  }
-  async function setNurseIdUI() {
-    const { value } = await Swal.fire({
-      title: 'ตั้งค่า Nurse ID',
-      input: 'text',
-      inputLabel: 'กรอกรหัสพยาบาล/ชื่อย่อ (ใช้บนหน้าจอ และส่งไปกับการบันทึก)',
-      inputValue: getNurseId(),
-      showCancelButton: true,
-      confirmButtonText: 'บันทึก',
-      cancelButtonText: 'ยกเลิก'
-    });
-    if (value !== undefined) {
-      localStorage.setItem(NURSE_KEY, String(value || "").trim());
-      renderNurseId();
-    }
-  }
-
-  // ================== Helpers ==================
-  function fillSelect(id, items) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.innerHTML =
-      '<option value="">-- เลือก --</option>' +
-      (items || []).map(i => `<option value="${escapeHtml(i)}">${escapeHtml(i)}</option>`).join('');
-  }
-
-  function escapeHtml(s) {
-    return String(s ?? "")
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
-  function formatDateForInput(v) {
-    if (!v || !String(v).includes('/')) return "";
-    const p = String(v).split('/');
-    let y = parseInt(p[2], 10);
-    if (y > 2400) y -= 543;
-    return `${y}-${String(p[1]).padStart(2, '0')}-${String(p[0]).padStart(2, '0')}`;
-  }
-
-  function formatDateForSheet(v) {
-    if (!v) return "";
-    const p = v.split('-');
-    return `${p[2]}/${p[1]}/${parseInt(p[0], 10) + 543}`;
-  }
-
-  function formatTimeForInput(v) {
-    if (!v) return "";
-    let c = String(v).trim().replace('.', ':');
-    let p = c.split(':');
-    return p.length >= 2 ? `${p[0].padStart(2, '0')}:${p[1].padStart(2, '0')}` : "";
-  }
-
-  function formatHNAN(id) {
-    let el = document.getElementById(id);
-    let v = (el.value || "").replace(/-/g, '');
-    if (v.length > 2) el.value = v.slice(0, -2) + '-' + v.slice(-2);
-  }
-
-  function safeInt(v) { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; }
-
-  function shortThaiDate(dmyBE) {
-    if (!dmyBE) return "";
-    const s = String(dmyBE);
-    const p = s.split('/');
-    if (p.length < 3) return s;
-    return `${p[0].padStart(2, '0')}/${p[1].padStart(2, '0')}`;
-  }
-
-  // ================== Sheet picking (latest) ==================
-  function sheetNameToDate(sheetName) {
-    if (!sheetName) return null;
-    const monthMap = {
-      "มกราคม": 0, "กุมภาพันธ์": 1, "มีนาคม": 2, "เมษายน": 3, "พฤษภาคม": 4, "มิถุนายน": 5,
-      "กรกฎาคม": 6, "สิงหาคม": 7, "กันยายน": 8, "ตุลาคม": 9, "พฤศจิกายน": 10, "ธันวาคม": 11,
-      "มกรา": 0, "กุมภา": 1, "มีนา": 2, "เมษา": 3, "พฤษภา": 4, "มิถุนา": 5,
-      "กรกฎา": 6, "สิงหา": 7, "กันยา": 8, "ตุลา": 9, "พฤศจิกา": 10, "ธันวา": 11
-    };
-
-    let mIdx = null;
-    for (const m in monthMap) {
-      if (sheetName.includes(m)) { mIdx = monthMap[m]; break; }
-    }
-    if (mIdx === null) return null;
-
-    const yearMatch = sheetName.match(/\d+/);
-    if (!yearMatch) return null;
-
-    let yearBE = parseInt(yearMatch[0], 10);
-    if (yearBE < 100) yearBE = 2500 + yearBE;
-
-    const yearCE = yearBE - 543;
-    const d = new Date(yearCE, mIdx, 1);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }
-
-  function pickLatestSheet(names) {
-    if (!Array.isArray(names) || names.length === 0) return "";
-    const sorted = [...names].sort((a, b) => {
-      const da = sheetNameToDate(a);
-      const db = sheetNameToDate(b);
-      if (!da && !db) return String(a).localeCompare(String(b));
-      if (!da) return 1;
-      if (!db) return -1;
-      return db - da;
-    });
-    return sorted[0];
-  }
-
-  // ================== LOS preview (form only) ==================
-  function getMonthStartFromSheet() {
-    const months = ["มกรา", "กุมภา", "มีนา", "เมษา", "พฤษภา", "มิถุนา", "กรกฎา", "สิงหา", "กันยา", "ตุลา", "พฤศจิกา", "ธันวา"];
-    let mIdx = -1;
-    months.forEach((m, i) => { if (currentSheet.includes(m)) mIdx = i; });
-
-    if (mIdx === -1) {
-      const full = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
-      full.forEach((m, i) => { if (currentSheet.includes(m)) mIdx = i; });
-    }
-    if (mIdx === -1) return null;
-
-    const yearMatch = currentSheet.match(/\d+/);
-    let year = yearMatch ? parseInt(yearMatch[0], 10) : (new Date().getFullYear() + 543);
-    if (year < 100) year = 2500 + year;
-    year = year - 543;
-
-    const d = new Date(year, mIdx, 1);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  }
-
-  function calculateLOSPreview() {
-    const admitUnder6 = document.getElementById('admitUnder6').value.trim();
-    if (admitUnder6 !== "") { document.getElementById('los').value = "0"; return; }
-
-    const sVal = document.getElementById('inDate').value;
-    const eVal =
-      document.getElementById('dcDate').value ||
-      document.getElementById('deathDate').value ||
-      document.getElementById('transferOutDate').value ||
-      document.getElementById('abscondDate').value ||
-      document.getElementById('refuseDate').value ||
-      document.getElementById('referOutDate').value;
-
-    if (!sVal) { document.getElementById('los').value = ""; return; }
-
-    const monthStart = getMonthStartFromSheet();
-    if (!monthStart) { document.getElementById('los').value = ""; return; }
-
-    const start = new Date(sVal); start.setHours(0, 0, 0, 0);
-    let end = eVal ? new Date(eVal) : new Date(); end.setHours(0, 0, 0, 0);
-
-    const ms = monthStart;
-    const me = new Date(ms.getFullYear(), ms.getMonth() + 1, 0); me.setHours(0, 0, 0, 0);
-
-    let calcStart = (start < ms) ? ms : start;
-    if (end > me) end = me;
-    if (end < calcStart) { document.getElementById('los').value = "0"; return; }
-
-    const los = Math.floor((end - calcStart) / 86400000) + 1;
-    document.getElementById('los').value = String(los);
-  }
-
-  // ================== Charts (dashboard) ==================
-  function updateCharts(sMap, saMap) {
-    if (sithiChart) sithiChart.destroy();
-    if (saiChart) saiChart.destroy();
-
-    const cfg = (t, m, color) => ({
-      type: 'bar',
-      data: { labels: Object.keys(m), datasets: [{ data: Object.values(m), backgroundColor: color, borderRadius: 8 }] },
-      options: {
-        indexAxis: 'y',
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { title: { display: true, text: t, align: 'start' }, legend: { display: false } },
-        scales: { x: { grid: { display: false } }, y: { grid: { display: false } } }
-      }
-    });
-
-    sithiChart = new Chart(document.getElementById('chartSithi'), cfg('สิทธิการรักษา', sMap, '#0d6efd'));
-    saiChart = new Chart(document.getElementById('chartSai'), cfg('สายการแพทย์', saMap, '#198754'));
-  }
-
-  // ================== Summary / Render ==================
-  function isCarryRow(x) {
-    const st = (x.patientStatus || x.rawData?.[0] || "").trim();
-    return st === "ยอดยกมา";
-  }
-  function isNewThisMonthRow(x) {
-    const st = (x.patientStatus || x.rawData?.[0] || "").trim();
-    return st === "รับใหม่" || st === "รับย้าย" || st === "รับ Refer";
-  }
-
-  function updateSummary(all) {
-    const carryCount = all.filter(isCarryRow).length;
-    const newCount = all.filter(isNewThisMonthRow).length;
-
-    const active = all.filter(x => x.status === 'ยังรักษาอยู่').length;
-    const dc = all.filter(x => x.status === 'จำหน่ายแล้ว').length;
-
-    document.getElementById('sumCarry').innerText = carryCount;
-    document.getElementById('sumNew').innerText = newCount;
-    document.getElementById('sumTotal').innerText = all.length;
-
-    document.getElementById('sumActive').innerText = active;
-    document.getElementById('sumDC').innerText = dc;
-    document.getElementById('sumRows').innerText = all.length;
-  }
-
-  // ===== Table filter + quick search =====
-  function quickSearch(which, text) {
-    tableState[which].search = String(text || "");
-    const dt = (which === 'carry') ? carryDT : newDT;
-    if (dt) dt.search(tableState[which].search).draw();
-  }
-
-  function setTableFilter(which, mode) {
-    tableState[which].filter = mode;
-
-    const ids = (which === 'carry')
-      ? ['carryFilterAll', 'carryFilterActive', 'carryFilterDC', 'carryFilterLong']
-      : ['newFilterAll', 'newFilterActive', 'newFilterDC', 'newFilterLong'];
-
-    ids.forEach(id => document.getElementById(id)?.classList.remove('active'));
-    const hit = (which === 'carry')
-      ? (mode === 'ALL' ? 'carryFilterAll' : mode === 'ACTIVE' ? 'carryFilterActive' : mode === 'DC' ? 'carryFilterDC' : 'carryFilterLong')
-      : (mode === 'ALL' ? 'newFilterAll' : mode === 'ACTIVE' ? 'newFilterActive' : mode === 'DC' ? 'newFilterDC' : 'newFilterLong');
-
-    document.getElementById(hit)?.classList.add('active');
-
-    const dt = (which === 'carry') ? carryDT : newDT;
-    if (dt) dt.draw();
-  }
-
-  $.fn.dataTable.ext.search.push(function (settings, data) {
-    const id = settings.nTable?.getAttribute?.('id');
-    let which = null;
-    if (id === 'carryTable') which = 'carry';
-    if (id === 'newTable') which = 'new';
-    if (!which) return true;
-
-    const mode = tableState[which].filter || 'ALL';
-    if (mode === 'ALL') return true;
-
-    const losText = (data[7] || "").replace(/[^\d]/g, '');
-    const los = parseInt(losText, 10) || 0;
-    const status = String(data[8] || "").trim();
-
-    if (mode === 'ACTIVE') return status.includes('ยังรักษาอยู่');
-    if (mode === 'DC') return status.includes('จำหน่ายแล้ว');
-    if (mode === 'LONG') return los >= 30;
-    return true;
-  });
-
-  function buildRowHtml(item) {
-    const r = item.rawData || [];
-    const type = (item.patientStatus || r[0] || '').trim();
-
-    const badgeMap = {
-      "ยอดยกมา": "bg-secondary",
-      "รับใหม่": "bg-primary",
-      "รับย้าย": "bg-dark",
-      "รับ Refer": "bg-info text-dark"
-    };
-    const typeBadge = badgeMap[type] || "bg-light text-dark";
-
-    const statusBadge = item.status === 'จำหน่ายแล้ว' ? 'bg-success' : 'bg-warning text-dark';
-
-    const admitDate = r[2] || r[5] || r[8] || "";
-    const admitShort = shortThaiDate(admitDate);
-
-    const los = parseInt(item.displayLOS, 10);
-    const isLong = (!isNaN(los) && los >= 30);
-
-    let losBadge = '';
-    if (!isNaN(los)) {
-      if (los >= 30) losBadge = `<span class="badge bg-danger">${los}</span>`;
-      else if (los >= 7) losBadge = `<span class="badge bg-warning text-dark">${los}</span>`;
-      else losBadge = `<span class="badge bg-success">${los}</span>`;
-    }
-
-    const hn = r[13] || '';
-    const an = r[14] || '';
-    const name = r[11] || '';
-    const ward = r[15] || '';
-
-    return `
-      <tr class="row-clickable ${isLong ? 'row-longstay' : ''}" data-rowid="${item.rowId}">
-        <td><span class="badge ${typeBadge}">${escapeHtml(type)}</span></td>
-        <td>${escapeHtml(r[1] || '')}</td>
-        <td>${escapeHtml(hn)}</td>
-        <td>${escapeHtml(an)}</td>
-        <td>${escapeHtml(name)}</td>
-        <td>${escapeHtml(admitShort || admitDate)}</td>
-        <td>${escapeHtml(ward)}</td>
-        <td>${losBadge}</td>
-        <td><span class="badge ${statusBadge}">${escapeHtml(item.status)}</span></td>
-        <td>
-          <div class="btn-group">
-            <button class="btn btn-sm btn-outline-primary btn-icon" data-action="edit" data-rowid="${item.rowId}" title="แก้ไข">✏️</button>
-            <button class="btn btn-sm btn-outline-danger btn-icon" data-action="pdf" data-rowid="${item.rowId}" title="PDF">📄</button>
-            <button class="btn btn-sm btn-warning btn-icon" data-action="dis" data-rowid="${item.rowId}" title="จำหน่าย">🏥</button>
-          </div>
-        </td>
-      </tr>
-    `;
-  }
-
-  function rebuildIndex() {
-    lastDataByRowId = new Map();
-    lastData.forEach(x => lastDataByRowId.set(String(x.rowId), x));
-  }
-
-  function renderTables() {
-    const carry = lastData.filter(isCarryRow);
-    const nnew = lastData.filter(isNewThisMonthRow);
-
-    document.getElementById('carryCount').innerText = carry.length;
-    document.getElementById('newCount').innerText = nnew.length;
-
-    if (carryDT) { carryDT.destroy(); carryDT = null; }
-    if (newDT) { newDT.destroy(); newDT = null; }
-
-    document.getElementById('carryBody').innerHTML = carry.map(buildRowHtml).join('');
-    document.getElementById('newBody').innerHTML = nnew.map(buildRowHtml).join('');
-
-    const activeAll = lastData.filter(x => x.status === 'ยังรักษาอยู่').length;
-    const dcAll = lastData.filter(x => x.status === 'จำหน่ายแล้ว').length;
-    document.getElementById('censusContent').innerHTML =
-      `<div class="d-flex justify-content-between align-items-end">
-         <div>
-           <div class="subtle">Active (ขณะนี้)</div>
-           <div style="font-size:38px;font-weight:900;line-height:1">${activeAll}</div>
-         </div>
-         <div class="text-end">
-           <div class="subtle">D/C</div>
-           <div style="font-size:20px;font-weight:900">${dcAll}</div>
-           <div class="subtle mt-1">รวมทั้งหมด: <b>${lastData.length}</b></div>
-         </div>
-       </div>`;
-
-    const sMap = {}, saMap = {};
-    lastData.forEach(item => {
-      const r = item.rawData || [];
-      const sithi = r[17] || "ไม่ระบุ";
-      const sai = r[16] || "ไม่ระบุ";
-      sMap[sithi] = (sMap[sithi] || 0) + 1;
-      saMap[sai] = (saMap[sai] || 0) + 1;
-    });
-    updateCharts(sMap, saMap);
-
-    carryDT = $('#carryTable').DataTable({
-      order: [[1, 'desc']],
-      responsive: true,
-      pageLength: 25,
-      language: { url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/th.json' }
-    });
-
-    newDT = $('#newTable').DataTable({
-      order: [[1, 'desc']],
-      responsive: true,
-      pageLength: 25,
-      language: { url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/th.json' }
-    });
-
-    carryDT.search(tableState.carry.search || "").draw();
-    newDT.search(tableState.new.search || "").draw();
-    carryDT.draw();
-    newDT.draw();
-  }
-
-  // ================== Table events ==================
-  function getItemByRowId(rowId) {
-    return lastDataByRowId.get(String(rowId)) || null;
-  }
-
-  function bindTableEvents() {
-    const carryBody = document.getElementById('carryBody');
-    const newBody = document.getElementById('newBody');
-    if (!carryBody || !newBody) return;
-
-    // ป้องกัน bind ซ้ำ
-    carryBody.replaceWith(carryBody.cloneNode(true));
-    newBody.replaceWith(newBody.cloneNode(true));
-
-    const carryNew = document.getElementById('carryBody');
-    const newNew = document.getElementById('newBody');
-
-    const handler = async function (e) {
-      const btn = e.target.closest('button[data-action]');
-      const tr = e.target.closest('tr[data-rowid]');
-      if (!tr) return;
-
-      const rowId = tr.getAttribute('data-rowid');
-      const item = getItemByRowId(rowId);
-      if (!item) return;
-
-      if (btn) {
-        e.stopPropagation();
-        const act = btn.getAttribute('data-action');
-        if (act === 'edit') { await editPatient(item); return; }
-        if (act === 'pdf') { await printPDF(item); return; }
-        if (act === 'dis') { await dischargeUI(item); return; }
-        return;
-      }
-
-      openPatientModal(item);
-    };
-
-    carryNew.addEventListener('click', handler);
-    newNew.addEventListener('click', handler);
-  }
-
-  // ================== Patient Detail Modal ==================
- // 1. ฟังก์ชันแสดง Modal รายละเอียดผู้ป่วย
-function openPatientModal(item) {
-    const r = item.rawData || [];
-    const admitDate = r[2] || r[5] || r[8] || "";
-    const admitTime = r[3] || r[6] || r[9] || "";
-    const admitType = r[2] ? "รับใหม่" : (r[5] ? "รับย้าย" : (r[8] ? "รับ Refer" : (r[0] || "")));
-
-    const outDate = r[20] || r[25] || r[26] || r[27] || r[28] || r[30] || "";
-    const outType =
-        r[20] ? "D/C" :
-        r[25] ? "ย้ายออก" :
-        r[26] ? "หนี" :
-        r[27] ? "ปฏิเสธ" :
-        r[28] ? "Refer Out" :
-        r[30] ? "เสียชีวิต" : "-";
-
-    const nurseId = getNurseId();
-
-    // สร้างเนื้อหา HTML สำหรับใส่ใน Modal Body
-    const html = `
-      <div class="report-block">
-        <div class="d-flex justify-content-between align-items-start gap-2">
-          <div>
-            <div class="fw-black" style="font-size:18px;">
-              ${escapeHtml((r[32] || "") + (r[11] || ""))}
-            </div>
-            <div class="subtle mt-1">
-              HN: <b>${escapeHtml(r[13] || "-")}</b> &nbsp;|&nbsp; AN: <b>${escapeHtml(r[14] || "-")}</b>
-            </div>
-          </div>
-          <div class="text-end">
-            <span class="pill">LOS เดือนนี้: <b>${escapeHtml(item.displayLOS ?? 0)}</b></span>
-            <div class="subtle mt-2">${nurseId ? `Nurse ID: <b>${escapeHtml(nurseId)}</b>` : ''}</div>
-          </div>
-        </div>
-        <hr>
-        <div class="row g-2">
-          <div class="col-12 col-md-6">
-            <div class="mini">
-              <div class="label">Admit</div>
-              <div class="fw-black">${escapeHtml(admitDate || "-")} ${escapeHtml(admitTime ? ("เวลา " + admitTime) : "")}</div>
-              <div class="subtle">${escapeHtml(admitType)} ${r[4] || r[7] || r[10] ? `| ต้นทาง: ${escapeHtml(r[4] || r[7] || r[10])}` : ""}</div>
-            </div>
-          </div>
-          <div class="col-12 col-md-6">
-            <div class="mini">
-              <div class="label">Outcome</div>
-              <div class="fw-black">${escapeHtml(outType)} ${outDate ? `(${escapeHtml(outDate)})` : ""}</div>
-              <div class="subtle">สถานะ: <b>${escapeHtml(item.status)}</b></div>
-            </div>
-          </div>
-        </div>
+      <div class="modal-header bg-warning">
+        <h5 class="modal-title fw-bold">จำหน่ายผู้ป่วย</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-    `;
 
-    // ใส่ข้อมูลลงใน Modal Body
-    document.getElementById('patientModalBody').innerHTML = html;
+      <div class="modal-body">
+
+        <input type="hidden" id="disRowId">
+
+        <div class="mb-2">
+          <label class="form-label">ประเภทจำหน่าย</label>
+          <select id="disType" class="form-select">
+            <option value="">--เลือก--</option>
+            <option value="dc">D/C</option>
+            <option value="transfer">ย้ายแผนก</option>
+            <option value="refer">Refer Out</option>
+            <option value="death">เสียชีวิต</option>
+            <option value="abscond">หนี</option>
+            <option value="refuse">ปฏิเสธ</option>
+          </select>
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label">วันที่</label>
+          <input type="date" id="disDate" class="form-control">
+        </div>
+
+        <div class="mb-2" id="fuBox">
+          <label class="form-label">F/U</label>
+          <input type="text" id="disFU" class="form-control">
+        </div>
+
+        <div class="mb-2" id="transferBox">
+          <label class="form-label">ย้ายไปแผนก</label>
+          <input type="text" id="transferDept" class="form-control">
+        </div>
+
+        <div class="mb-2" id="referBox">
+          <label class="form-label">Refer ไปที่</label>
+          <input type="text" id="referDest" class="form-control">
+        </div>
+
+        <div class="small text-muted">
+          Nurse ID: <b id="disNurseId"></b>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button class="btn btn-success" onclick="saveDischarge()">บันทึก</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+  <!-- ================== Report (PRO + HA PRO) ================== -->
+<script>
+/* =========================================================
+ * REPORT (PRO + HA PRO)
+ * - buildReportSkeleton (ทั้งก้อน)
+ * - showFullReport (อัปเดตให้เรียก HA PRO)
+ * - helpers: Dx/Age/Outcome/LOS + render tables
+ * ========================================================= */
 
-    // จัดการปุ่มใน Modal Footer
-    const modalFooter = document.querySelector('#patientModal .modal-footer');
-    modalFooter.innerHTML = `
-      <button class="btn btn-outline-secondary rounded-pill" data-bs-dismiss="modal">ปิด</button>
-      <button class="btn btn-outline-primary rounded-pill" id="btnModalEdit">แก้ไข</button>
-      <button class="btn btn-danger rounded-pill" id="btnModalPDF">PDF</button>
-    `;
-
-    // เพิ่มปุ่ม "ยกเลิกจำหน่าย" เฉพาะเคสที่ D/C แล้ว
-    if (item.status === 'จำหน่ายแล้ว') {
-        const btnCancel = document.createElement('button');
-        btnCancel.className = 'btn btn-outline-danger rounded-pill ms-auto';
-        btnCancel.innerHTML = '🔄 ยกเลิกการจำหน่าย';
-        btnCancel.onclick = () => confirmCancelDischarge(item);
-        modalFooter.prepend(btnCancel);
-    }
-
-    // ผูกคำสั่งปุ่ม แก้ไข และ PDF
-    document.getElementById('btnModalEdit').onclick = () => editPatient(item);
-    document.getElementById('btnModalPDF').onclick = () => printPDF(item);
-
-    // สั่งเปิด Modal
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('patientModal')).show();
-}
-
-// 2. ฟังก์ชันยืนยันการยกเลิกการจำหน่าย
-async function confirmCancelDischarge(item) {
-    const result = await Swal.fire({
-        title: 'ยืนยันยกเลิกจำหน่าย?',
-        text: `ต้องการดึงเคสคุณ ${item.patientName} กลับมาเป็นผู้ป่วย Active ใช่หรือไม่?`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc3545',
-        confirmButtonText: 'ใช่, ยกเลิกจำหน่าย',
-        cancelButtonText: 'ยกเลิก'
-    });
-
-    if (result.isConfirmed) {
-        try {
-            Swal.fire({ title: 'กำลังประมวลผล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-
-            await callApi('cancelDischarge', {
-                targetSheet: currentSheet,
-                rowId: item.rowId
-            });
-
-            bootstrap.Modal.getInstance(document.getElementById('patientModal')).hide();
-            Swal.fire('สำเร็จ', 'ผู้ป่วยกลับมาสถานะ Active แล้ว', 'success');
-            loadDashboard(); // รีโหลดตารางข้อมูลใหม่
-        } catch (err) {
-            Swal.fire('ผิดพลาด', err.toString(), 'error');
-        }
-    }
-}
-
-  // ================== Quick Discharge ==================
-  async function dischargeUI(item) {
-    disItem = item; // ✅ เก็บ item เพื่อดึง patientStatus เดิม
-
-    const modalEl = document.getElementById("dischargeModal");
-    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-
-    document.getElementById("disRowId").value = item.rowId;
-    document.getElementById("disNurseId").innerText = getNurseId() || "-";
-    document.getElementById("disDate").value = new Date().toISOString().split("T")[0];
-
-    document.getElementById("disType").value = "";
-    document.getElementById("disFU").value = "";
-    document.getElementById("transferDept").value = "";
-    document.getElementById("referDest").value = "";
-
-    toggleDisFields();
-    modal.show();
-  }
-
-  function toggleDisFields() {
-    const typeEl = document.getElementById("disType");
-    if (!typeEl) return;
-
-    const t = typeEl.value;
-    const fuBox = document.getElementById("fuBox");
-    const transferBox = document.getElementById("transferBox");
-    const referBox = document.getElementById("referBox");
-
-    if (fuBox) fuBox.style.display = (t === "dc") ? "block" : "none";
-    if (transferBox) transferBox.style.display = (t === "transfer") ? "block" : "none";
-    if (referBox) referBox.style.display = (t === "refer") ? "block" : "none";
-  }
-
-  async function saveDischarge() {
-    const rowId = document.getElementById("disRowId").value;
-    const type = document.getElementById("disType").value;
-    const date = document.getElementById("disDate").value;
-
-    if (!type) return Swal.fire("เลือกประเภทก่อน");
-    if (!date) return Swal.fire("เลือกวันที่");
-
-    const d = formatDateForSheet(date);
-
-    // ✅ ล็อกประเภทเดิมของแถว: ถ้าเป็น "ยอดยกมา" จะไม่ยอมเปลี่ยนเป็นรับใหม่อีก
-    const keepStatus = (disItem?.rawData?.[0] || disItem?.patientStatus || "").trim();
-
-    const formData = {
-      rowId,
-      patientStatus: keepStatus, // ✅ สำคัญมาก
-
-      dcDate: "",
-      transferOutDate: "",
-      transferOut: "",
-      referOutDate: "",
-      referDestination: "",
-      deathDate: "",
-      abscondDate: "",
-      refuseDate: "",
-      fu: "",
-      nurseId: getNurseId()
-    };
-
-    if (type === "dc") {
-      formData.dcDate = d;
-      formData.fu = document.getElementById("disFU").value;
-    }
-    if (type === "transfer") {
-      formData.transferOutDate = d;
-      formData.transferOut = document.getElementById("transferDept").value;
-    }
-    if (type === "refer") {
-      formData.referOutDate = d;
-      formData.referDestination = document.getElementById("referDest").value;
-    }
-    if (type === "death") formData.deathDate = d;
-    if (type === "abscond") formData.abscondDate = d;
-    if (type === "refuse") formData.refuseDate = d;
-
-    Swal.fire({ title: 'กำลังบันทึก...', didOpen: () => Swal.showLoading() });
-
-    await callApi('processData', { targetSheet: currentSheet, formData });
-
-    bootstrap.Modal.getInstance(document.getElementById("dischargeModal")).hide();
-    Swal.fire("สำเร็จ", "", "success");
-    loadDashboard();
-    
-  }
-
-  // Enter = save เมื่อ modal เปิดอยู่
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Enter") {
-      const modal = document.getElementById("dischargeModal");
-      if (modal && modal.classList.contains("show")) {
-        e.preventDefault();
-        saveDischarge();
-      }
-    }
-  });
-
-  // ================== Export ==================
-  function exportCSV(type) {
-    let filtered = lastData;
-
-    if (type === 'CARRY') filtered = lastData.filter(isCarryRow);
-    else if (type === 'NEW') filtered = lastData.filter(isNewThisMonthRow);
-
-    const headers = ['ประเภท', 'ลำดับ', 'HN', 'AN', 'ชื่อ-สกุล', 'Admit', 'แผนก', 'LOS', 'สถานะ'];
-    const rows = filtered.map(x => {
-      const r = x.rawData || [];
-      const admitDate = r[2] || r[5] || r[8] || "";
-      return [
-        x.patientStatus || r[0] || '',
-        r[1] || '',
-        r[13] || '',
-        r[14] || '',
-        r[11] || '',
-        admitDate,
-        r[15] || '',
-        x.displayLOS ?? '',
-        x.status || ''
-      ];
-    });
-
-    const csv = [headers, ...rows]
-      .map(arr => arr.map(v => `"${String(v).replaceAll('"', '""')}"`).join(','))
-      .join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `patients_${currentSheet}_${type || 'ALL'}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  // ================== Load / Init ==================
-  document.addEventListener("DOMContentLoaded", () => {
-    renderNurseId();
-
-    // dropdowns
-    callApi('getDropdownData').then(d => {
-      fillSelect('ward', d.ward);
-      fillSelect('sithi', d.sithi);
-      fillSelect('sai', d.sai);
-      document.getElementById('dxList').innerHTML =
-        (d.dx || []).map(x => `<option value="${escapeHtml(x)}">`).join('');
-    });
-
-    // bind tables once
-    bindTableEvents();
-
-    // modal change event (กัน null)
-    const disTypeEl = document.getElementById("disType");
-    if (disTypeEl) disTypeEl.addEventListener("change", toggleDisFields);
-
-    // modal shown focus
-    const disModalEl = document.getElementById("dischargeModal");
-    if (disModalEl) {
-      disModalEl.addEventListener("shown.bs.modal", () => {
-        toggleDisFields();
-        setTimeout(() => document.getElementById("disType")?.focus?.(), 150);
-      });
-    }
-
-    // report modal focus restore
-    const reportEl = document.getElementById('reportModal');
-    if (reportEl) {
-      reportEl.addEventListener('hidden.bs.modal', () => {
-        lastTriggerEl?.focus?.();
-      });
-    }
-
-    // time
-    setInterval(() => {
-      const el = document.getElementById('currentTime');
-      if (el) el.innerText = new Date().toLocaleString('th-TH');
-    }, 1000);
-
-    // init sheets last (หลัง DOM พร้อม)
-    initSheets();
-  });
-
-  async function initSheets() {
-    const names = await callApi('getSheetNames');
-    const selector = document.getElementById('sheetSelector');
-    const btn = document.querySelector('button[onclick="closeMonthUI()"]');
-
-    if (!names || names.length === 0) {
-      selector.innerHTML = `<option value="">ยังไม่มีข้อมูล</option>`;
-      btn.innerText = "เริ่มเดือนแรก";
-      btn.classList.remove('btn-danger');
-      btn.classList.add('btn-warning');
-      currentSheet = "";
-      lastData = [];
-      updateSummary([]);
-      document.getElementById('censusContent').innerHTML = "ยังไม่มีข้อมูล";
-      return;
-    }
-
-    selector.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
-    btn.innerText = "ปิดยอดเดือน";
-    btn.classList.remove('btn-warning');
-    btn.classList.add('btn-danger');
-
-    currentSheet = pickLatestSheet(names);
-    selector.value = currentSheet;
-
-    loadDashboard();
-  }
-
-  // ✅ ฟังก์ชันเตรียมฟอร์มลงทะเบียนใหม่ (แก้ปัญหาปุ่มกดไม่ได้)
-async function prepareNewForm() {
-
-  document.getElementById('dataForm').reset();
-  document.getElementById('rowId').value = "";
-  document.getElementById('patientStatusStored').value = "";
-  document.getElementById('inType').value = "รับใหม่";
-
-  if (currentSheet) {
-
-    Swal.fire({
-      title: "กำลังเตรียมลำดับผู้ป่วย...",
-      html: `
-        <div style="font-size:50px">🧸</div>
-        <div style="margin-top:10px">วอร์ดเด็กกำลังเตรียมคิวให้หนูอยู่...</div>
-      `,
-      allowOutsideClick: false,
-      showConfirmButton: false,
-      didOpen: () => Swal.showLoading()
-    });
-
-    try {
-      const nextSeq = await callApi('getNextSeq', currentSheet);
-      document.getElementById('seq').value = nextSeq;
-    } catch(e){
-      console.error(e);
-    }
-
-    Swal.close();
-  }
-
-  const tab = new bootstrap.Tab(document.querySelector('button[data-bs-target="#form-pane"]'));
-  tab.show();
-  window.scrollTo(0,0);
-}
-
-  function onSheetChange() {
-    currentSheet = document.getElementById('sheetSelector').value;
-    loadDashboard();
-  }
-
-  function loadDashboard() {
-    Swal.fire({ title: 'โหลดข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-
-    callApi('getAllData', currentSheet).then(data => {
-      lastData = Array.isArray(data) ? data : [];
-      rebuildIndex();
-      updateSummary(lastData);
-      document.getElementById('sheetStatusChip').innerText = 'โหลดแล้ว';
-      renderTables();
-      Swal.close();
-    }).catch(err => {
-      Swal.fire('ผิดพลาด', err.toString(), 'error');
-    });
-  }
-// ฟังก์ชันตรวจสอบ AN ซ้ำ และจัดรูปแบบอัตโนมัติ
-async function checkAN() {
-  // 1. จัดรูปแบบ AN ให้มีขีด (เช่น 6712 เป็น 67-12)
-  formatHNAN('an');
-
-  const anValue = document.getElementById('an').value;
-  const rowId = document.getElementById('rowId').value;
-
-  // 2. ถ้าเป็นการลงทะเบียนใหม่ (ไม่มี rowId) ให้เช็คซ้ำในระบบ
-  if (!rowId && anValue) {
-    try {
-      const isDup = await callApi('checkDuplicateAN', {
-        targetSheet: currentSheet,
-        an: anValue
-      });
-
-      if (isDup) {
-        Swal.fire({
-          title: 'พบข้อมูล AN ซ้ำ!',
-          text: `หมายเลข AN ${anValue} มีอยู่ในทะเบียนของเดือนนี้แล้ว กรุณาตรวจสอบอีกครั้ง`,
-          icon: 'warning',
-          confirmButtonColor: '#f89406'
-        });
-      }
-    } catch (err) {
-      console.error("Error checking duplicate AN:", err);
-    }
-  }
-}
-  // ================== Edit / PDF (คงเดิมของคุณ) ==================
-function editPatient(item) {
-    const r = item.rawData || [];
-
-    document.getElementById('rowId').value = item.rowId;
-    document.getElementById('seq').value = r[1] || "";
-    document.getElementById('patientStatusStored').value = r[0] || "รับใหม่";
-
-    document.getElementById('prefix').value = r[32] || 'นาย';
-    document.getElementById('patientName').value = r[11] || "";
-    document.getElementById('gender').value = r[33] || 'ชาย';
-
-    const am = (r[12]||"").match(/(\d+) ปี (\d+) เดือน (\d+) วัน/);
-    if(am){
-      document.getElementById('ageYear').value = am[1];
-      document.getElementById('ageMonth').value = am[2];
-      document.getElementById('ageDay').value = am[3];
-    } else {
-      document.getElementById('ageYear').value = 0;
-      document.getElementById('ageMonth').value = 0;
-      document.getElementById('ageDay').value = 0;
-    }
-
-    document.getElementById('inDate').value = formatDateForInput(r[2]||r[5]||r[8]);
-    document.getElementById('inTime').value = formatTimeForInput(r[3]||r[6]||r[9]);
-    document.getElementById('inDept').value = r[4]||r[7]||r[10]||"";
-
-    document.getElementById('hn').value = r[13] || "";
-    document.getElementById('an').value = r[14] || "";
-
-    document.getElementById('ward').value = r[15] || "";
-    document.getElementById('sai').value = r[16] || "";
-    document.getElementById('sithi').value = r[17] || "";
-    document.getElementById('dx1').value = r[18] || "";
-    document.getElementById('dx2').value = r[19] || "";
-
-    document.getElementById('dcDate').value = formatDateForInput(r[20]);
-    document.getElementById('fu').value = r[21] || "";
-    document.getElementById('admitUnder6').value = r[22] || "";
-    document.getElementById('deathDate').value = formatDateForInput(r[30]);
-    document.getElementById('transferOutDate').value = formatDateForInput(r[25]);
-    document.getElementById('transferOut').value = r[24] || "";
-    document.getElementById('abscondDate').value = formatDateForInput(r[26]);
-    document.getElementById('refuseDate').value = formatDateForInput(r[27]);
-    document.getElementById('referOutDate').value = formatDateForInput(r[28]);
-    document.getElementById('referDestination').value = r[29] || "";
-    document.getElementById('address').value = r[31] || "";
-
-    if(r[2]) document.getElementById('inType').value = "รับใหม่";
-    else if(r[5]) document.getElementById('inType').value = "รับย้าย";
-    else if(r[8]) document.getElementById('inType').value = "รับ Refer";
-
-    calculateLOSPreview();
-    new bootstrap.Tab(document.querySelector('button[data-bs-target="#form-pane"]')).show();
-    window.scrollTo(0,0);
-  }  
-  function printPDF(item) {
-    const win = window.open("", "_blank");
-    const r = item.rawData || [];
-
-    const p = {
-      prefix:r[32], patientName:r[11], hn:r[13], an:r[14], gender:r[33], age:r[12],
-      address:r[31], sithi:r[17], ward:r[15], sai:r[16], dx1:r[18], dx2:r[19],
-      inType:r[2]?'รับใหม่':(r[5]?'รับย้าย':'Refer'),
-      inDate:r[2]||r[5]||r[8], inTime:r[3]||r[6]||r[9], inDept:r[4]||r[7]||r[10],
-      status:item.status, los:item.displayLOS, dcDate:r[20], deathDate:r[30], transferOut:r[24],
-      admitUnder6:r[22], patientStatus:r[0]
-    };
-
-    callApi('createPatientPDF', p).then(b => {
-      win.document.write(`<iframe src="data:application/pdf;base64,${b}" style="width:100%;height:100vh;border:none;"></iframe>`);
-    }).catch(err => win.document.write(`<pre>${err.toString()}</pre>`));
-  }
-  // ================== Form submit (คงเดิมของคุณ) ==================
-  document.getElementById('dataForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    Swal.fire({ title: 'บันทึก...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-
-    const inT = document.getElementById('inType').value;
-    const existingStatus = (document.getElementById('patientStatusStored').value || "").trim();
-    const statusToSave = (existingStatus === "ยอดยกมา") ? "ยอดยกมา" : inT;
-
-    const formData = {
-      rowId: document.getElementById('rowId').value,
-      seq: document.getElementById('seq').value,
-      patientStatus: statusToSave,
-
-      prefix: document.getElementById('prefix').value,
-      patientName: document.getElementById('patientName').value,
-      gender: document.getElementById('gender').value,
-      age: `${document.getElementById('ageYear').value} ปี ${document.getElementById('ageMonth').value} เดือน ${document.getElementById('ageDay').value} วัน`,
-
-      hn: document.getElementById('hn').value,
-      an: document.getElementById('an').value,
-      ward: document.getElementById('ward').value,
-      sai: document.getElementById('sai').value,
-      sithi: document.getElementById('sithi').value,
-      dx1: document.getElementById('dx1').value,
-      dx2: document.getElementById('dx2').value,
-      address: document.getElementById('address').value,
-
-      los: document.getElementById('los').value,
-      fu: document.getElementById('fu').value,
-      admitUnder6: document.getElementById('admitUnder6').value,
-
-      dcDate: formatDateForSheet(document.getElementById('dcDate').value),
-      deathDate: formatDateForSheet(document.getElementById('deathDate').value),
-      transferOutDate: formatDateForSheet(document.getElementById('transferOutDate').value),
-      transferOut: document.getElementById('transferOut').value,
-      abscondDate: formatDateForSheet(document.getElementById('abscondDate').value),
-      refuseDate: formatDateForSheet(document.getElementById('refuseDate').value),
-      referOutDate: formatDateForSheet(document.getElementById('referOutDate').value),
-      referDestination: document.getElementById('referDestination').value,
-
-      // optional for future logging
-      nurseId: getNurseId() || ""
-    };
-
-    const iD = formatDateForSheet(document.getElementById('inDate').value);
-    const iT = document.getElementById('inTime').value;
-    const iDep = document.getElementById('inDept').value;
-
-    if(inT === "รับใหม่"){
-      formData.newMark=iD; formData.newTime=iT; formData.newDept=iDep;
-    } else if(inT === "รับย้าย"){
-      formData.transferMark=iD; formData.transferTime=iT; formData.transferDept=iDep;
-    } else {
-      formData.referMark=iD; formData.referTime=iT; formData.referDept=iDep;
-    }
-
-    try{
-      await callApi('processData', { targetSheet: currentSheet, formData });
-      Swal.fire('สำเร็จ', '', 'success');
-      loadDashboard();
-      new bootstrap.Tab(document.querySelector('button[data-bs-target="#list-pane"]')).show();
-    }catch(err){
-      Swal.fire('ผิดพลาด', err.toString(), 'error');
-    }
-  });
-
-
-
-    // ================== Report (PRO) ==================
-// ================== Report (PRO) ==================
 function destroyReportCharts() {
   if (repChartIn) repChartIn.destroy();
   if (repChartOut) repChartOut.destroy();
@@ -1586,6 +645,178 @@ function destroyReportCharts() {
   repChartIn = repChartOut = repChartLOS = null;
 }
 
+/* ====== HA PRO BLOCKS (HTML) ====== */
+const HA_PRO_BLOCKS = `
+  <div class="col-12">
+    <div class="report-block">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div class="fw-black">HA Pro: Top Dx แยกมิติ (Dx1)</div>
+        <div class="subtle">* ค่าเริ่มต้นนับ Dx1 (Principal Dx) และ map ผ่าน DxMap</div>
+      </div>
+
+      <div class="row g-2 mt-2">
+
+        <!-- 1) Top Dx by Admit Type -->
+        <div class="col-12">
+          <div class="mini">
+            <div class="fw-black mb-2">Top Dx by Admit Type</div>
+            <div class="row g-2">
+              <div class="col-12 col-lg-4">
+                <div class="subtle mb-1">รับใหม่</div>
+                <div class="table-wrap">
+                  <table class="table table-sm table-striped mb-0">
+                    <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                    <tbody id="dxByAdmit_new"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="col-12 col-lg-4">
+                <div class="subtle mb-1">รับย้าย</div>
+                <div class="table-wrap">
+                  <table class="table table-sm table-striped mb-0">
+                    <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                    <tbody id="dxByAdmit_transfer"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="col-12 col-lg-4">
+                <div class="subtle mb-1">รับ Refer</div>
+                <div class="table-wrap">
+                  <table class="table table-sm table-striped mb-0">
+                    <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                    <tbody id="dxByAdmit_refer"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2) Top Dx by Age Group -->
+        <div class="col-12">
+          <div class="mini">
+            <div class="fw-black mb-2">Top Dx by Age Group</div>
+            <div class="row g-2">
+              <div class="col-12 col-lg-3">
+                <div class="subtle mb-1">&lt; 1 ปี</div>
+                <div class="table-wrap"><table class="table table-sm table-striped mb-0">
+                  <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                  <tbody id="dxByAge_inf"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody></table></div>
+              </div>
+              <div class="col-12 col-lg-3">
+                <div class="subtle mb-1">1–5 ปี</div>
+                <div class="table-wrap"><table class="table table-sm table-striped mb-0">
+                  <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                  <tbody id="dxByAge_1to5"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody></table></div>
+              </div>
+              <div class="col-12 col-lg-3">
+                <div class="subtle mb-1">6–12 ปี</div>
+                <div class="table-wrap"><table class="table table-sm table-striped mb-0">
+                  <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                  <tbody id="dxByAge_6to12"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody></table></div>
+              </div>
+              <div class="col-12 col-lg-3">
+                <div class="subtle mb-1">13–18 ปี</div>
+                <div class="table-wrap"><table class="table table-sm table-striped mb-0">
+                  <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                  <tbody id="dxByAge_13to18"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody></table></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3) Top Dx by LOS -->
+        <div class="col-12">
+          <div class="mini">
+            <div class="fw-black mb-2">Top Dx by LOS Bucket</div>
+            <div class="row g-2">
+              <div class="col-12 col-lg-4">
+                <div class="subtle mb-1">LOS 1–3</div>
+                <div class="table-wrap"><table class="table table-sm table-striped mb-0">
+                  <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                  <tbody id="dxByLos_1to3"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody></table></div>
+              </div>
+              <div class="col-12 col-lg-4">
+                <div class="subtle mb-1">LOS 4–6</div>
+                <div class="table-wrap"><table class="table table-sm table-striped mb-0">
+                  <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                  <tbody id="dxByLos_4to6"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody></table></div>
+              </div>
+              <div class="col-12 col-lg-4">
+                <div class="subtle mb-1">LOS ≥ 7</div>
+                <div class="table-wrap"><table class="table table-sm table-striped mb-0">
+                  <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                  <tbody id="dxByLos_7plus"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody></table></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4) Top Dx by Outcome -->
+        <div class="col-12">
+          <div class="mini">
+            <div class="fw-black mb-2">Top Dx by Outcome</div>
+            <div class="row g-2">
+              <div class="col-12 col-lg-3">
+                <div class="subtle mb-1">D/C</div>
+                <div class="table-wrap"><table class="table table-sm table-striped mb-0">
+                  <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                  <tbody id="dxByOut_dc"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody></table></div>
+              </div>
+              <div class="col-12 col-lg-3">
+                <div class="subtle mb-1">Refer Out</div>
+                <div class="table-wrap"><table class="table table-sm table-striped mb-0">
+                  <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                  <tbody id="dxByOut_ro"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody></table></div>
+              </div>
+              <div class="col-12 col-lg-3">
+                <div class="subtle mb-1">Transfer Out</div>
+                <div class="table-wrap"><table class="table table-sm table-striped mb-0">
+                  <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                  <tbody id="dxByOut_to"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody></table></div>
+              </div>
+              <div class="col-12 col-lg-3">
+                <div class="subtle mb-1">Death</div>
+                <div class="table-wrap"><table class="table table-sm table-striped mb-0">
+                  <thead class="table-light"><tr><th style="width:50px">#</th><th>Dx</th><th class="text-end" style="width:90px">n</th></tr></thead>
+                  <tbody id="dxByOut_death"><tr><td colspan="3" class="text-center text-muted">กำลังคำนวณ...</td></tr></tbody></table></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5) Dx vs Mortality -->
+        <div class="col-12">
+          <div class="mini">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+              <div class="fw-black">Dx vs Mortality (Dx1)</div>
+              <div class="subtle">Top 10 Dx ตาม Admit แล้วคำนวณ death rate</div>
+            </div>
+            <div class="table-wrap mt-2">
+              <table class="table table-sm table-striped align-middle mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th style="width:50px">#</th>
+                    <th>Dx1 (Mapped)</th>
+                    <th class="text-end" style="width:90px">Admit</th>
+                    <th class="text-end" style="width:90px">Death</th>
+                    <th class="text-end" style="width:120px">Mortality %</th>
+                  </tr>
+                </thead>
+                <tbody id="dxMortBody">
+                  <tr><td colspan="5" class="text-center text-muted">กำลังคำนวณ...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+`;
+
+/* ====== buildReportSkeleton (ทั้งก้อน) ====== */
 function buildReportSkeleton(monthTitle) {
   return `
     <div class="report-note mb-2">
@@ -1595,6 +826,7 @@ function buildReportSkeleton(monthTitle) {
           <div>• Patient Days = ผลรวม LOS ที่ตัดยอดภายในเดือน</div>
           <div>• ALOS(จำหน่าย) = Patient Days / Separations</div>
           <div>• ALOS(รับเข้า) = Patient Days / Admissions</div>
+          <div class="subtle mt-1">* เดือนเปิดคิดถึง “วันนี้”; เดือนปิดคิดถึง “สิ้นเดือน” (ตาม LOS ที่คุณคำนวณใน getAllData)</div>
         </div>
         <div class="text-end">
           <span class="pill">เดือน: <b>${escapeHtml(monthTitle)}</b></span>
@@ -1687,7 +919,7 @@ function buildReportSkeleton(monthTitle) {
           <!-- Dx Summary (Top 10) -->
           <div class="col-12">
             <div class="report-block">
-              <div class="fw-black mb-2">Dx Summary (Top 10)</div>
+              <div class="fw-black mb-2">Dx Summary (Top 10) (Dx1 + Dx2)</div>
               <div class="subtle mb-2">* ใช้ DxMap ในการจัดกลุ่ม (ถ้าไม่พบ map จะใช้คำเดิม)</div>
 
               <div class="table-wrap">
@@ -1734,10 +966,152 @@ function buildReportSkeleton(monthTitle) {
           <canvas id="repChartLOS" style="max-height:220px;"></canvas>
         </div>
       </div>
+
+      <!-- HA PRO ADDITIONS -->
+      ${HA_PRO_BLOCKS}
     </div>
   `;
 }
-  
+
+/* ===================== HA PRO HELPERS ===================== */
+function parseAgeYearsFromText(ageText) {
+  const s = String(ageText || "");
+  const m = s.match(/(\d+)\s*ปี/);
+  return m ? (parseInt(m[1], 10) || 0) : 0;
+}
+
+function getAdmitTypeFromRow(r) {
+  if (r?.[2]) return "new";
+  if (r?.[5]) return "transfer";
+  if (r?.[8]) return "refer";
+  return "unknown";
+}
+
+function getOutcomeFromRow(r) {
+  if (r?.[20]) return "dc";
+  if (r?.[25]) return "to";
+  if (r?.[28]) return "ro";
+  if (r?.[30]) return "death";
+  if (r?.[26]) return "abscond";
+  if (r?.[27]) return "refuse";
+  return "active";
+}
+
+function losBucket(los) {
+  const n = parseInt(los, 10) || 0;
+  if (n <= 0) return "0";
+  if (n <= 3) return "1to3";
+  if (n <= 6) return "4to6";
+  return "7plus";
+}
+
+function ageBucket(years) {
+  const y = parseInt(years, 10) || 0;
+  if (y < 1) return "inf";
+  if (y <= 5) return "1to5";
+  if (y <= 12) return "6to12";
+  return "13to18";
+}
+
+function topNFromCounter(counterObj, n = 10) {
+  return Object.entries(counterObj || {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n);
+}
+
+function renderTopTable(tbodyId, pairs) {
+  const el = document.getElementById(tbodyId);
+  if (!el) return;
+
+  if (!pairs || pairs.length === 0) {
+    el.innerHTML = `<tr><td colspan="3" class="text-center text-muted">ไม่มีข้อมูล</td></tr>`;
+    return;
+  }
+
+  el.innerHTML = pairs.map(([dx, c], i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${escapeHtml(dx)}</td>
+      <td class="text-end"><b>${c}</b></td>
+    </tr>
+  `).join('');
+}
+
+function renderHaProDx(patients, mapDx) {
+  const byAdmit = { new: {}, transfer: {}, refer: {} };
+  const byAge = { inf: {}, '1to5': {}, '6to12': {}, '13to18': {} };
+  const byLos = { '1to3': {}, '4to6': {}, '7plus': {} };
+  const byOut = { dc: {}, ro: {}, to: {}, death: {} };
+
+  const dxAdmitCount = {};
+  const dxDeathCount = {};
+
+  (patients || []).forEach(p => {
+    const r = p.rawData || [];
+    const dx1 = mapDx(r[18]); // Dx1 เท่านั้นสำหรับ HA Pro
+    if (!dx1) return;
+
+    const admitT = getAdmitTypeFromRow(r);
+    const outT = getOutcomeFromRow(r);
+    const ageY = parseAgeYearsFromText(r[12]);
+    const aBucket = ageBucket(ageY);
+
+    const los = parseInt(p.displayLOS, 10) || 0;
+    const lBucket = losBucket(los);
+
+    if (byAdmit[admitT]) byAdmit[admitT][dx1] = (byAdmit[admitT][dx1] || 0) + 1;
+    if (byAge[aBucket]) byAge[aBucket][dx1] = (byAge[aBucket][dx1] || 0) + 1;
+
+    if (lBucket !== "0" && byLos[lBucket]) byLos[lBucket][dx1] = (byLos[lBucket][dx1] || 0) + 1;
+    if (byOut[outT]) byOut[outT][dx1] = (byOut[outT][dx1] || 0) + 1;
+
+    dxAdmitCount[dx1] = (dxAdmitCount[dx1] || 0) + 1;
+    if (outT === "death") dxDeathCount[dx1] = (dxDeathCount[dx1] || 0) + 1;
+  });
+
+  renderTopTable('dxByAdmit_new', topNFromCounter(byAdmit.new, 10));
+  renderTopTable('dxByAdmit_transfer', topNFromCounter(byAdmit.transfer, 10));
+  renderTopTable('dxByAdmit_refer', topNFromCounter(byAdmit.refer, 10));
+
+  renderTopTable('dxByAge_inf', topNFromCounter(byAge.inf, 10));
+  renderTopTable('dxByAge_1to5', topNFromCounter(byAge['1to5'], 10));
+  renderTopTable('dxByAge_6to12', topNFromCounter(byAge['6to12'], 10));
+  renderTopTable('dxByAge_13to18', topNFromCounter(byAge['13to18'], 10));
+
+  renderTopTable('dxByLos_1to3', topNFromCounter(byLos['1to3'], 10));
+  renderTopTable('dxByLos_4to6', topNFromCounter(byLos['4to6'], 10));
+  renderTopTable('dxByLos_7plus', topNFromCounter(byLos['7plus'], 10));
+
+  renderTopTable('dxByOut_dc', topNFromCounter(byOut.dc, 10));
+  renderTopTable('dxByOut_ro', topNFromCounter(byOut.ro, 10));
+  renderTopTable('dxByOut_to', topNFromCounter(byOut.to, 10));
+  renderTopTable('dxByOut_death', topNFromCounter(byOut.death, 10));
+
+  // Dx vs Mortality
+  const topDxByAdmit = topNFromCounter(dxAdmitCount, 10);
+  const mortBody = document.getElementById('dxMortBody');
+  if (mortBody) {
+    if (topDxByAdmit.length === 0) {
+      mortBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">ไม่มีข้อมูล</td></tr>`;
+    } else {
+      mortBody.innerHTML = topDxByAdmit.map(([dx, admitN], i) => {
+        const deathN = dxDeathCount[dx] || 0;
+        const rate = admitN > 0 ? (deathN / admitN) * 100 : 0;
+        return `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${escapeHtml(dx)}</td>
+            <td class="text-end"><b>${admitN}</b></td>
+            <td class="text-end"><b>${deathN}</b></td>
+            <td class="text-end"><b>${rate.toFixed(2)}%</b></td>
+          </tr>
+        `;
+      }).join('');
+    }
+  }
+}
+
+/* ===================== showFullReport (อัปเดตทั้งก้อน) ===================== */
 async function showFullReport(btn) {
   lastTriggerEl = btn || document.activeElement;
   lastTriggerEl?.blur?.();
@@ -1750,23 +1124,24 @@ async function showFullReport(btn) {
   Swal.fire({ title: 'คำนวณรายงานสรุป...', didOpen: () => Swal.showLoading() });
 
   try {
- const [patients, summary, dxMapPack] = await Promise.all([
-  callApi('getAllData', currentSheet),
-  callApi('getMonthlySummaryRow', currentSheet),
-  callApi('getDxMap')
-]);
+    const [patients, summary, dxMapPack] = await Promise.all([
+      callApi('getAllData', currentSheet),
+      callApi('getMonthlySummaryRow', currentSheet),
+      callApi('getDxMap')
+    ]);
 
-const dxMap = dxMapPack?.map || {};
-const mapDx = (s) => {
-  const raw = String(s || "").trim().replace(/\s+/g, " ");
-  if (!raw) return "";
-  return String(dxMap[raw] || raw).trim().replace(/\s+/g, " ");
-};
+    const dxMap = dxMapPack?.map || {};
+    const mapDx = (s) => {
+      const raw = String(s || "").trim().replace(/\s+/g, " ");
+      if (!raw) return "";
+      return String(dxMap[raw] || raw).trim().replace(/\s+/g, " ");
+    };
 
     document.getElementById('reportMonthTitle').innerText = currentSheet;
     destroyReportCharts();
     document.getElementById('reportResult').innerHTML = buildReportSkeleton(currentSheet);
 
+    // BOR + beds
     if (summary) {
       const borNum = parseFloat(String(summary.bor).replace('%', '')) || 0;
       const bedsNum = summary.beds ?? "-";
@@ -1785,22 +1160,22 @@ const mapDx = (s) => {
 
     const typeOf = (item) => ((item.patientStatus || item.rawData?.[0] || "").trim());
 
-    const carry = patients.filter(x => typeOf(x) === "ยอดยกมา").length;
-    const inNew = patients.filter(x => typeOf(x) === "รับใหม่").length;
-    const inTransfer = patients.filter(x => typeOf(x) === "รับย้าย").length;
-    const inRefer = patients.filter(x => typeOf(x) === "รับ Refer").length;
+    const carry = (patients || []).filter(x => typeOf(x) === "ยอดยกมา").length;
+    const inNew = (patients || []).filter(x => typeOf(x) === "รับใหม่").length;
+    const inTransfer = (patients || []).filter(x => typeOf(x) === "รับย้าย").length;
+    const inRefer = (patients || []).filter(x => typeOf(x) === "รับ Refer").length;
     const inTotal = inNew + inTransfer + inRefer;
 
-    const outDC = patients.filter(x => x.rawData?.[20]).length;
-    const outTO = patients.filter(x => x.rawData?.[25]).length;
-    const outAbs = patients.filter(x => x.rawData?.[26]).length;
-    const outRefu = patients.filter(x => x.rawData?.[27]).length;
-    const outRO = patients.filter(x => x.rawData?.[28]).length;
-    const outDeath = patients.filter(x => x.rawData?.[30]).length;
+    const outDC = (patients || []).filter(x => x.rawData?.[20]).length;
+    const outTO = (patients || []).filter(x => x.rawData?.[25]).length;
+    const outAbs = (patients || []).filter(x => x.rawData?.[26]).length;
+    const outRefu = (patients || []).filter(x => x.rawData?.[27]).length;
+    const outRO = (patients || []).filter(x => x.rawData?.[28]).length;
+    const outDeath = (patients || []).filter(x => x.rawData?.[30]).length;
 
     const outTotal = outDC + outTO + outAbs + outRefu + outRO + outDeath;
-    const eom = patients.filter(x => x.status === "ยังรักษาอยู่").length;
-    const patientDays = patients.reduce((s, x) => s + (safeInt(x.displayLOS)), 0);
+    const eom = (patients || []).filter(x => x.status === "ยังรักษาอยู่").length;
+    const patientDays = (patients || []).reduce((s, x) => s + (safeInt(x.displayLOS)), 0);
 
     document.getElementById('kpiCarry').innerText = carry;
     document.getElementById('kpiInTotal').innerText = inTotal;
@@ -1821,6 +1196,7 @@ const mapDx = (s) => {
     document.getElementById('kpiALOSOut').innerText = (outTotal > 0) ? (patientDays / outTotal).toFixed(2) : "0.00";
     document.getElementById('kpiALOSIn').innerText = (inTotal > 0) ? (patientDays / inTotal).toFixed(2) : "0.00";
 
+    // Charts
     repChartIn = new Chart(document.getElementById('repChartIn'), {
       type: 'doughnut',
       data: { labels: ['รับใหม่', 'รับย้าย', 'รับ Refer'], datasets: [{ data: [inNew, inTransfer, inRefer] }] },
@@ -1834,7 +1210,7 @@ const mapDx = (s) => {
     });
 
     const buckets = { "0": 0, "1-3": 0, "4-6": 0, "7-13": 0, "14-29": 0, "30+": 0 };
-    patients.forEach(p => {
+    (patients || []).forEach(p => {
       const los = safeInt(p.displayLOS);
       if (los <= 0) buckets["0"]++;
       else if (los <= 3) buckets["1-3"]++;
@@ -1850,37 +1226,36 @@ const mapDx = (s) => {
       options: { plugins: { legend: { display: false } } }
     });
 
-    // ================= Dx Summary =================
-const counts = {};
-patients.forEach(p => {
-  const r = p.rawData || [];
-  const dx1 = mapDx(r[18]);
-  const dx2 = mapDx(r[19]);
+    // Dx Summary (Top 10) (Dx1 + Dx2)
+    const counts = {};
+    (patients || []).forEach(p => {
+      const r = p.rawData || [];
+      const dx1 = mapDx(r[18]);
+      const dx2 = mapDx(r[19]);
+      [dx1, dx2].forEach(dx => {
+        if (!dx) return;
+        counts[dx] = (counts[dx] || 0) + 1;
+      });
+    });
 
-  [dx1, dx2].forEach(dx => {
-    if (!dx) return;
-    counts[dx] = (counts[dx] || 0) + 1;
-  });
-});
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const body = document.getElementById('dxSummaryBody');
+    if (body) {
+      if (top.length === 0) {
+        body.innerHTML = `<tr><td colspan="3" class="text-center text-muted">ยังไม่มีข้อมูล Dx</td></tr>`;
+      } else {
+        body.innerHTML = top.map(([dx, n], i) => `
+          <tr>
+            <td>${i + 1}</td>
+            <td>${escapeHtml(dx)}</td>
+            <td class="text-end"><b>${n}</b></td>
+          </tr>
+        `).join('');
+      }
+    }
 
-const top = Object.entries(counts)
-  .sort((a,b) => b[1] - a[1])
-  .slice(0, 10);
-
-const body = document.getElementById('dxSummaryBody');
-if (body) {
-  if (top.length === 0) {
-    body.innerHTML = `<tr><td colspan="3" class="text-center text-muted">ยังไม่มีข้อมูล Dx</td></tr>`;
-  } else {
-    body.innerHTML = top.map(([dx, n], i) => `
-      <tr>
-        <td>${i+1}</td>
-        <td>${escapeHtml(dx)}</td>
-        <td class="text-end"><b>${n}</b></td>
-      </tr>
-    `).join('');
-  }
-}
+    // ===== HA PRO =====
+    renderHaProDx(patients, mapDx);
 
     Swal.close();
     bootstrap.Modal.getOrCreateInstance(document.getElementById('reportModal')).show();
@@ -1890,117 +1265,8 @@ if (body) {
   }
 }
 
-async function closeMonthUI() {
-  if (!currentSheet) {
-    Swal.fire("ยังไม่ได้เลือกเดือน", "", "warning");
-    return;
-  }
-
-  const { value: bedCount } = await Swal.fire({
-    title: 'ปิดยอดเดือน?',
-    text: 'ระบุจำนวนเตียงที่ใช้จริงในเดือนนี้:',
-    input: 'number',
-    inputValue: 20,
-    showCancelButton: true,
-    confirmButtonText: 'ปิดยอด',
-    cancelButtonText: 'ยกเลิก'
-  });
-
-  if (bedCount === undefined) return;
-
-  const beds = parseInt(bedCount, 10);
-  if (isNaN(beds) || beds <= 0) {
-    Swal.fire("จำนวนเตียงไม่ถูกต้อง", "กรุณาใส่ตัวเลขมากกว่า 0", "warning");
-    return;
-  }
-
-  try {
-    Swal.fire({ title: 'กำลังดำเนินการ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-
-    await callApi('closeMonthAction', {
-      currentSheetName: currentSheet,
-      bedCount: beds
-    });
-
-    Swal.close();
-    Swal.fire("ปิดยอดสำเร็จ", "", "success");
-    await initSheets();
-
-  } catch (err) {
-    Swal.fire('ผิดพลาด', err.toString(), 'error');
-  }
-}
-
-// ✅ เพื่อความชัวร์: ผูกขึ้น global ให้ onclick ใช้ได้แน่
-window.prepareNewForm = prepareNewForm;
+// bind global
 window.showFullReport = showFullReport;
-window.closeMonthUI = closeMonthUI;
 </script>
-
-
-
-
-
-  
-<div class="modal fade" id="dischargeModal">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-
-      <div class="modal-header bg-warning">
-        <h5 class="modal-title fw-bold">จำหน่ายผู้ป่วย</h5>
-        <button class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-
-      <div class="modal-body">
-
-        <input type="hidden" id="disRowId">
-
-        <div class="mb-2">
-          <label class="form-label">ประเภทจำหน่าย</label>
-          <select id="disType" class="form-select">
-            <option value="">--เลือก--</option>
-            <option value="dc">D/C</option>
-            <option value="transfer">ย้ายแผนก</option>
-            <option value="refer">Refer Out</option>
-            <option value="death">เสียชีวิต</option>
-            <option value="abscond">หนี</option>
-            <option value="refuse">ปฏิเสธ</option>
-          </select>
-        </div>
-
-        <div class="mb-2">
-          <label class="form-label">วันที่</label>
-          <input type="date" id="disDate" class="form-control">
-        </div>
-
-        <div class="mb-2" id="fuBox">
-          <label class="form-label">F/U</label>
-          <input type="text" id="disFU" class="form-control">
-        </div>
-
-        <div class="mb-2" id="transferBox">
-          <label class="form-label">ย้ายไปแผนก</label>
-          <input type="text" id="transferDept" class="form-control">
-        </div>
-
-        <div class="mb-2" id="referBox">
-          <label class="form-label">Refer ไปที่</label>
-          <input type="text" id="referDest" class="form-control">
-        </div>
-
-        <div class="small text-muted">
-          Nurse ID: <b id="disNurseId"></b>
-        </div>
-
-      </div>
-
-      <div class="modal-footer">
-        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
-        <button class="btn btn-success" onclick="saveDischarge()">บันทึก</button>
-      </div>
-
-    </div>
-  </div>
-</div>
 </body>
 </html>
