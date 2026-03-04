@@ -1351,6 +1351,28 @@ async function confirmCancelDischarge(item) {
     loadDashboard();
   }
 
+  // ✅ ฟังก์ชันเตรียมฟอร์มลงทะเบียนใหม่ (แก้ปัญหาปุ่มกดไม่ได้)
+async function prepareNewForm() {
+    document.getElementById('dataForm').reset();
+    document.getElementById('rowId').value = "";
+    document.getElementById('patientStatusStored').value = "";
+    document.getElementById('inType').value = "รับใหม่";
+    
+    // ดึงเลขลำดับถัดไปมาแสดงรอไว้
+    if (currentSheet) {
+        try {
+            const nextSeq = await callApi('getNextSeq', currentSheet);
+            document.getElementById('seq').value = nextSeq;
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    const tab = new bootstrap.Tab(document.querySelector('button[data-bs-target="#form-pane"]'));
+    tab.show();
+    window.scrollTo(0, 0);
+}
+
   function onSheetChange() {
     currentSheet = document.getElementById('sheetSelector').value;
     loadDashboard();
