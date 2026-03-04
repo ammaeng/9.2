@@ -1123,117 +1123,146 @@ function bindTableEvents(){
 
   // ================== Quick Discharge (B) ==================
 async function dischargeUI(item){
-  const r = item.rawData || [];
 
-  const { value: form } = await Swal.fire({
-    title: 'จำหน่ายผู้ป่วย',
-    html: `
-      <select id="disType" class="swal2-input">
-        <option value="">--เลือกประเภท--</option>
-        <option value="dc">D/C</option>
-        <option value="transfer">ย้ายแผนก</option>
-        <option value="refer">Refer Out</option>
-        <option value="death">เสียชีวิต</option>
-        <option value="abscond">หนี</option>
-        <option value="refuse">ปฏิเสธ</option>
-      </select>
+  const modal = new bootstrap.Modal(
+    document.getElementById("dischargeModal")
+  )
 
-<input type="date" id="disDate" class="swal2-input" value="${new Date().toISOString().split('T')[0]}">
-      <input type="text" id="disFU" class="swal2-input" placeholder="F/U (เฉพาะ D/C)">
+  document.getElementById("disRowId").value = item.rowId
+  document.getElementById("disNurseId").innerText = getNurseId() || "-"
 
-      <input type="text" id="transferDept" class="swal2-input" placeholder="ย้ายไปแผนก">
+  document.getElementById("disDate").value =
+    new Date().toISOString().split("T")[0]
 
-      <input type="text" id="referDest" class="swal2-input" placeholder="Refer ไปที่">
-    `,
-    focusConfirm: false,
-    showCancelButton: true,
-    confirmButtonText: 'บันทึก',
-    cancelButtonText: 'ยกเลิก',
+  document.getElementById("disType").value=""
+  document.getElementById("disFU").value=""
+  document.getElementById("transferDept").value=""
+  document.getElementById("referDest").value=""
 
-    didOpen: () => {
-      const typeEl = document.getElementById('disType');
-      const fuEl = document.getElementById('disFU');
-      const toEl = document.getElementById('transferDept');
-      const rdEl = document.getElementById('referDest');
+  toggleDisFields()
 
-      const apply = () => {
-        const v = typeEl.value;
-        fuEl.style.display = (v === 'dc') ? 'block' : 'none';
-        toEl.style.display = (v === 'transfer') ? 'block' : 'none';
-        rdEl.style.display = (v === 'refer') ? 'block' : 'none';
-      };
+  modal.show()
+} 
 
-      typeEl.addEventListener('change', apply);
-      apply(); // ซ่อนตั้งแต่เปิด popup
-    },
+  document.getElementById("disType").addEventListener("change", toggleDisFields)
 
-    preConfirm: () => {
-      const type = document.getElementById("disType").value;
-      const date = document.getElementById("disDate").value;
-      const fu   = document.getElementById("disFU").value;
-      const transferDept = document.getElementById("transferDept").value;
-      const referDest    = document.getElementById("referDest").value;
+function toggleDisFields(){
 
-      if (!type) return Swal.showValidationMessage("เลือกประเภทก่อน");
-      if (!date) return Swal.showValidationMessage("เลือกวันที่");
+  const t = document.getElementById("disType").value
 
-      if (type === "dc" && !fu.trim()) {
-        return Swal.showValidationMessage("ต้องกรอก F/U (กรณี D/C)");
-      }
+  document.getElementById("fuBox").style.display =
+    t==="dc" ? "block":"none"
 
-      return { type, date, fu, transferDept, referDest };
-    }
-  });
+  document.getElementById("transferBox").style.display =
+    t==="transfer" ? "block":"none"
 
-  if (!form) return;
-
-  // ---- เตรียม payload upsert เฉพาะช่องที่เกี่ยว ----
-  const formData = {
-    rowId: item.rowId,
-    patientStatus: r[0],
-    hn: r[13],
-    an: r[14],
-    ward: r[15],
-    dx1: r[18],
-    dx2: r[19],
-    address: r[31]
-  };
-
-const d = formatDateForSheet(form.date || "");
-  // clear outcome อื่น ๆ (กันซ้อน) -> ส่งเป็น "" ไปทับ
-  formData.dcDate = "";
-  formData.transferOutDate = "";
-  formData.transferOut = "";
-  formData.abscondDate = "";
-  formData.refuseDate = "";
-  formData.referOutDate = "";
-  formData.referDestination = "";
-  formData.deathDate = "";
-  formData.fu = "";
-
-  if (form.type === "dc") {
-    formData.dcDate = d;
-    formData.fu = form.fu;
-  }
-  if (form.type === "transfer") {
-    formData.transferOutDate = d;
-    formData.transferOut = form.transferDept;
-  }
-  if (form.type === "refer") {
-    formData.referOutDate = d;
-    formData.referDestination = form.referDest;
-  }
-  if (form.type === "death") formData.deathDate = d;
-  if (form.type === "abscond") formData.abscondDate = d;
-  if (form.type === "refuse") formData.refuseDate = d;
-
-  Swal.fire({ title:'กำลังบันทึก...', allowOutsideClick:false, didOpen: () => Swal.showLoading() });
-
-  await callApi('processData', { targetSheet: currentSheet, formData });
-
-  Swal.fire('สำเร็จ', '', 'success');
-  loadDashboard();
+  document.getElementById("referBox").style.display =
+    t==="refer" ? "block":"none"
 }
+
+  async function saveDischarge(){
+
+  const rowId = document.getElementById("disRowId").value
+  const type = document.getElementById("disType").value
+  const date = document.getElementById("disDate").value
+
+  if(!type) return Swal.fire("เลือกประเภทก่อน")
+  if(!date) return Swal.fire("เลือกวันที่")
+
+  const d = formatDateForSheet(date)
+
+  const formData = {
+    rowId: rowId,
+    dcDate:"",
+    transferOutDate:"",
+    transferOut:"",
+    referOutDate:"",
+    referDestination:"",
+    deathDate:"",
+    abscondDate:"",
+    refuseDate:"",
+    fu:"",
+    nurseId:getNurseId()
+  }
+
+  if(type==="dc"){
+    formData.dcDate=d
+    formData.fu=document.getElementById("disFU").value
+  }
+
+  if(type==="transfer"){
+    formData.transferOutDate=d
+    formData.transferOut=document.getElementById("transferDept").value
+  }
+
+  if(type==="refer"){
+    formData.referOutDate=d
+    formData.referDestination=document.getElementById("referDest").value
+  }
+
+  if(type==="death") formData.deathDate=d
+  if(type==="abscond") formData.abscondDate=d
+  if(type==="refuse") formData.refuseDate=d
+
+  Swal.fire({title:'กำลังบันทึก...',didOpen:()=>Swal.showLoading()})
+
+  await callApi('processData',{
+    targetSheet:currentSheet,
+    formData
+  })
+
+  bootstrap.Modal.getInstance(
+    document.getElementById("dischargeModal")
+  ).hide()
+
+  Swal.fire("สำเร็จ","","success")
+
+  loadDashboard()
+}
+
+  document.addEventListener("keydown",function(e){
+
+  if(e.key==="Enter"){
+
+    const modal=document.getElementById("dischargeModal")
+
+    if(modal.classList.contains("show")){
+      e.preventDefault()
+      saveDischarge()
+    }
+
+  }
+
+})
+  
+  async function undoDischarge(item){
+
+  const ok=await Swal.fire({
+    title:"ยกเลิกการจำหน่าย?",
+    showCancelButton:true
+  })
+
+  if(!ok.isConfirmed) return
+
+  const formData={
+    rowId:item.rowId,
+    dcDate:"",
+    transferOutDate:"",
+    abscondDate:"",
+    refuseDate:"",
+    referOutDate:"",
+    deathDate:""
+  }
+
+  await callApi('processData',{
+    targetSheet:currentSheet,
+    formData
+  })
+
+  loadDashboard()
+}
+
+  
   // ================== Export ==================
   function exportCSV(type){
     let filtered = lastData;
@@ -1737,6 +1766,65 @@ const d = formatDateForSheet(form.date || "");
     }
   }
 </script>
+<div class="modal fade" id="dischargeModal">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
 
+      <div class="modal-header bg-warning">
+        <h5 class="modal-title fw-bold">จำหน่ายผู้ป่วย</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+
+        <input type="hidden" id="disRowId">
+
+        <div class="mb-2">
+          <label class="form-label">ประเภทจำหน่าย</label>
+          <select id="disType" class="form-select">
+            <option value="">--เลือก--</option>
+            <option value="dc">D/C</option>
+            <option value="transfer">ย้ายแผนก</option>
+            <option value="refer">Refer Out</option>
+            <option value="death">เสียชีวิต</option>
+            <option value="abscond">หนี</option>
+            <option value="refuse">ปฏิเสธ</option>
+          </select>
+        </div>
+
+        <div class="mb-2">
+          <label class="form-label">วันที่</label>
+          <input type="date" id="disDate" class="form-control">
+        </div>
+
+        <div class="mb-2" id="fuBox">
+          <label class="form-label">F/U</label>
+          <input type="text" id="disFU" class="form-control">
+        </div>
+
+        <div class="mb-2" id="transferBox">
+          <label class="form-label">ย้ายไปแผนก</label>
+          <input type="text" id="transferDept" class="form-control">
+        </div>
+
+        <div class="mb-2" id="referBox">
+          <label class="form-label">Refer ไปที่</label>
+          <input type="text" id="referDest" class="form-control">
+        </div>
+
+        <div class="small text-muted">
+          Nurse ID: <b id="disNurseId"></b>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">ยกเลิก</button>
+        <button class="btn btn-success" onclick="saveDischarge()">บันทึก</button>
+      </div>
+
+    </div>
+  </div>
+</div>
 </body>
 </html>
