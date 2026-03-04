@@ -1328,17 +1328,20 @@ function toggleDisFields(){
   }
 
   // (แนะนำ) เวลาเปิด modal ให้ set field ให้ถูกทุกครั้ง
-  const disModalEl = document.getElementById("dischargeModal");
-  if (disModalEl) {
-    disModalEl.addEventListener("shown.bs.modal", () => {
-      toggleDisFields();
-modal.show()
+const disModalEl = document.getElementById("dischargeModal");
+if (disModalEl) {
+  disModalEl.addEventListener("shown.bs.modal", () => {
+    toggleDisFields();
 
-setTimeout(()=>{
-  document.getElementById("disType")?.focus()
-},200)    });
-  }
-});
+    setTimeout(()=>{
+      document.getElementById("disType")?.focus()
+    },200)
+
+  });
+}
+
+    
+
 
     // report modal focus restore
     const modalEl = document.getElementById('reportModal');
