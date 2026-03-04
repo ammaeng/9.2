@@ -1777,8 +1777,16 @@ async function showFullReport(btn) {
 
     const outTotal = outDC + outTO + outAbs + outRefu + outRO + outDeath;
     const eom = patients.filter(x => x.status === "ยังรักษาอยู่").length;
-    const patientDays = patients.reduce((s, x) => s + (safeInt(x.displayLOS)), 0);
+const discharged = patients.filter(x =>
+  x.rawData?.[20] ||
+  x.rawData?.[25] ||
+  x.rawData?.[26] ||
+  x.rawData?.[27] ||
+  x.rawData?.[28] ||
+  x.rawData?.[30]
+);
 
+const patientDays = discharged.reduce((s, x) => s + safeInt(x.displayLOS), 0);
     document.getElementById('kpiCarry').innerText = carry;
     document.getElementById('kpiInTotal').innerText = inTotal;
     document.getElementById('kpiInNew').innerText = inNew;
