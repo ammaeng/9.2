@@ -1122,8 +1122,9 @@ function bindTableEvents(){
   }
 
   // ================== Quick Discharge (B) ==================
+// ================== Quick Discharge (V9.3 Stable) ==================
+// ================== Quick Discharge (V9.3 Stable) ==================
 async function dischargeUI(item){
-
   const modalEl = document.getElementById("dischargeModal");
   if(!modalEl) return;
 
@@ -1132,46 +1133,48 @@ async function dischargeUI(item){
   document.getElementById("disRowId").value = item.rowId;
   document.getElementById("disNurseId").innerText = getNurseId() || "-";
 
-  document.getElementById("disDate").value =
-    new Date().toISOString().split("T")[0];
+  document.getElementById("disDate").value = new Date().toISOString().split("T")[0];
 
+  // reset fields
   document.getElementById("disType").value = "";
   document.getElementById("disFU").value = "";
   document.getElementById("transferDept").value = "";
   document.getElementById("referDest").value = "";
 
-  toggleDisFields();
-
+  toggleDisFields(); // set correct visibility
   modal.show();
 }
+
 function toggleDisFields(){
   const typeEl = document.getElementById("disType");
   if(!typeEl) return;
 
-  const t = typeEl.value;
+  const t = String(typeEl.value || "");
 
   const fuBox = document.getElementById("fuBox");
   const transferBox = document.getElementById("transferBox");
   const referBox = document.getElementById("referBox");
 
-  if (fuBox) fuBox.style.display = (t==="dc") ? "block" : "none";
-  if (transferBox) transferBox.style.display = (t==="transfer") ? "block" : "none";
-  if (referBox) referBox.style.display = (t==="refer") ? "block" : "none";
+  if (fuBox) fuBox.style.display = (t === "dc") ? "block" : "none";
+  if (transferBox) transferBox.style.display = (t === "transfer") ? "block" : "none";
+  if (referBox) referBox.style.display = (t === "refer") ? "block" : "none";
 }
 
-  async function saveDischarge(){
+async function saveDischarge(){
+  const modalEl = document.getElementById("dischargeModal");
+  if(!modalEl) return;
 
-  const rowId = document.getElementById("disRowId").value
-  const type = document.getElementById("disType").value
-  const date = document.getElementById("disDate").value
+  const rowId = document.getElementById("disRowId").value;
+  const type  = document.getElementById("disType").value;
+  const date  = document.getElementById("disDate").value;
 
-  if(!type) return Swal.fire("เลือกประเภทก่อน")
-  if(!date) return Swal.fire("เลือกวันที่")
+  if(!type) return Swal.fire("เลือกประเภทก่อน");
+  if(!date) return Swal.fire("เลือกวันที่");
 
-  const d = formatDateForSheet(date)
+  const d = formatDateForSheet(date);
 
   const formData = {
-    rowId: rowId,
+    rowId,
     dcDate:"",
     transferOutDate:"",
     transferOut:"",
@@ -1181,43 +1184,43 @@ function toggleDisFields(){
     abscondDate:"",
     refuseDate:"",
     fu:"",
-    nurseId:getNurseId()
+    nurseId: getNurseId()
+  };
+
+  if(type === "dc"){
+    formData.dcDate = d;
+    formData.fu = document.getElementById("disFU").value || "";
+  } else if(type === "transfer"){
+    formData.transferOutDate = d;
+    formData.transferOut = document.getElementById("transferDept").value || "";
+  } else if(type === "refer"){
+    formData.referOutDate = d;
+    formData.referDestination = document.getElementById("referDest").value || "";
+  } else if(type === "death"){
+    formData.deathDate = d;
+  } else if(type === "abscond"){
+    formData.abscondDate = d;
+  } else if(type === "refuse"){
+    formData.refuseDate = d;
   }
 
-  if(type==="dc"){
-    formData.dcDate=d
-    formData.fu=document.getElementById("disFU").value
+  Swal.fire({ title:'กำลังบันทึก...', allowOutsideClick:false, didOpen:()=>Swal.showLoading() });
+
+  try{
+    await callApi('processData', { targetSheet: currentSheet, formData });
+
+    bootstrap.Modal.getInstance(modalEl)?.hide();
+    Swal.fire("สำเร็จ","","success");
+    loadDashboard();
+
+  }catch(err){
+    Swal.fire("ผิดพลาด", String(err), "error");
   }
-
-  if(type==="transfer"){
-    formData.transferOutDate=d
-    formData.transferOut=document.getElementById("transferDept").value
-  }
-
-  if(type==="refer"){
-    formData.referOutDate=d
-    formData.referDestination=document.getElementById("referDest").value
-  }
-
-  if(type==="death") formData.deathDate=d
-  if(type==="abscond") formData.abscondDate=d
-  if(type==="refuse") formData.refuseDate=d
-
-  Swal.fire({title:'กำลังบันทึก...',didOpen:()=>Swal.showLoading()})
-
-  await callApi('processData',{
-    targetSheet:currentSheet,
-    formData
-  })
-
-  bootstrap.Modal.getInstance(
-    document.getElementById("dischargeModal")
-  ).hide()
-
-  Swal.fire("สำเร็จ","","success")
-
-  loadDashboard()
 }
+
+
+
+
 
   document.addEventListener("keydown",function(e){
 
@@ -1306,54 +1309,67 @@ function toggleDisFields(){
   }
 
   // ================== Load / Init ==================
-  document.addEventListener("DOMContentLoaded", () => {
-    renderNurseId();
-    initSheets();
+// ================== Load / Init (V9.3 Stable) ==================
+document.addEventListener("DOMContentLoaded", () => {
+  renderNurseId();
+  initSheets();
 
-    callApi('getDropdownData').then(d => {
-      fillSelect('ward', d.ward);
-      fillSelect('sithi', d.sithi);
-      fillSelect('sai', d.sai);
-      document.getElementById('dxList').innerHTML = (d.dx || []).map(x => `<option value="${escapeHtml(x)}">`).join('');
-    });
+  callApi('getDropdownData').then(d => {
+    fillSelect('ward', d.ward);
+    fillSelect('sithi', d.sithi);
+    fillSelect('sai', d.sai);
 
-    // bind table events once
-    bindTableEvents();
-    // bind change ของ discharge modal หลัง DOM พร้อม
+    const dxList = document.getElementById('dxList');
+    if (dxList) {
+      dxList.innerHTML = (d.dx || []).map(x => `<option value="${escapeHtml(x)}">`).join('');
+    }
+  });
+
+  // bind table events once (your function already clones tbody to avoid double bind)
+  bindTableEvents();
+
+  // discharge modal listeners
   const disTypeEl = document.getElementById("disType");
   if (disTypeEl) {
     disTypeEl.addEventListener("change", toggleDisFields);
   }
 
-  // (แนะนำ) เวลาเปิด modal ให้ set field ให้ถูกทุกครั้ง
-const disModalEl = document.getElementById("dischargeModal");
-if (disModalEl) {
-  disModalEl.addEventListener("shown.bs.modal", () => {
-    toggleDisFields();
+  const disModalEl = document.getElementById("dischargeModal");
+  if (disModalEl) {
+    disModalEl.addEventListener("shown.bs.modal", () => {
+      toggleDisFields();
+      // focus after modal fully visible
+      setTimeout(() => document.getElementById("disType")?.focus?.(), 150);
+    });
+  }
 
-    setTimeout(()=>{
-      document.getElementById("disType")?.focus()
-    },200)
-
-  });
-}
-
-    
-
-
-    // report modal focus restore
-    const modalEl = document.getElementById('reportModal');
-    if (modalEl) {
-      modalEl.addEventListener('hidden.bs.modal', () => {
-        lastTriggerEl?.focus?.();
-      });
+  // Enter to save discharge when modal open
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    const m = document.getElementById("dischargeModal");
+    if (m && m.classList.contains("show")) {
+      e.preventDefault();
+      saveDischarge();
     }
-
-    setInterval(() => {
-      document.getElementById('currentTime').innerText = new Date().toLocaleString('th-TH');
-    }, 1000);
   });
 
+  // report modal focus restore
+  const reportEl = document.getElementById('reportModal');
+  if (reportEl) {
+    reportEl.addEventListener('hidden.bs.modal', () => {
+      lastTriggerEl?.focus?.();
+    });
+  }
+
+  // clock
+  const ct = document.getElementById('currentTime');
+  if (ct) {
+    ct.innerText = new Date().toLocaleString('th-TH');
+    setInterval(() => {
+      ct.innerText = new Date().toLocaleString('th-TH');
+    }, 1000);
+  }
+});
   async function initSheets() {
     const names = await callApi('getSheetNames');
     const selector = document.getElementById('sheetSelector');
