@@ -1332,8 +1332,11 @@ function toggleDisFields(){
   if (disModalEl) {
     disModalEl.addEventListener("shown.bs.modal", () => {
       toggleDisFields();
-      document.getElementById("disType")?.focus?.();
-    });
+modal.show()
+
+setTimeout(()=>{
+  document.getElementById("disType")?.focus()
+},200)    });
   }
 });
 
