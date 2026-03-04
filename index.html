@@ -1124,28 +1124,26 @@ function bindTableEvents(){
   // ================== Quick Discharge (B) ==================
 async function dischargeUI(item){
 
-  const modal = new bootstrap.Modal(
-    document.getElementById("dischargeModal")
-  )
+  const modalEl = document.getElementById("dischargeModal");
+  if(!modalEl) return;
 
-  document.getElementById("disRowId").value = item.rowId
-  document.getElementById("disNurseId").innerText = getNurseId() || "-"
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+
+  document.getElementById("disRowId").value = item.rowId;
+  document.getElementById("disNurseId").innerText = getNurseId() || "-";
 
   document.getElementById("disDate").value =
-    new Date().toISOString().split("T")[0]
+    new Date().toISOString().split("T")[0];
 
-  document.getElementById("disType").value=""
-  document.getElementById("disFU").value=""
-  document.getElementById("transferDept").value=""
-  document.getElementById("referDest").value=""
+  document.getElementById("disType").value = "";
+  document.getElementById("disFU").value = "";
+  document.getElementById("transferDept").value = "";
+  document.getElementById("referDest").value = "";
 
-  toggleDisFields()
+  toggleDisFields();
 
-toggleDisFields()
-modal.show()  
-} 
-
-
+  modal.show();
+}
 function toggleDisFields(){
   const typeEl = document.getElementById("disType");
   if(!typeEl) return;
