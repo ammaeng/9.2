@@ -1023,33 +1023,34 @@
   }
 
   // ================== Patient Detail Modal ==================
-  function openPatientModal(item) {
+ // 1. ฟังก์ชันแสดง Modal รายละเอียดผู้ป่วย
+function openPatientModal(item) {
     const r = item.rawData || [];
     const admitDate = r[2] || r[5] || r[8] || "";
     const admitTime = r[3] || r[6] || r[9] || "";
     const admitType = r[2] ? "รับใหม่" : (r[5] ? "รับย้าย" : (r[8] ? "รับ Refer" : (r[0] || "")));
 
     const outDate = r[20] || r[25] || r[26] || r[27] || r[28] || r[30] || "";
-
     const outType =
-      r[20] ? "D/C" :
-      r[25] ? "ย้ายออก" :
-      r[26] ? "หนี" :
-      r[27] ? "ปฏิเสธ" :
-      r[28] ? "Refer Out" :
-      r[30] ? "เสียชีวิต" : "-";
+        r[20] ? "D/C" :
+        r[25] ? "ย้ายออก" :
+        r[26] ? "หนี" :
+        r[27] ? "ปฏิเสธ" :
+        r[28] ? "Refer Out" :
+        r[30] ? "เสียชีวิต" : "-";
 
     const nurseId = getNurseId();
 
+    // สร้างเนื้อหา HTML สำหรับใส่ใน Modal Body
     const html = `
       <div class="report-block">
         <div class="d-flex justify-content-between align-items-start gap-2">
           <div>
             <div class="fw-black" style="font-size:18px;">
-              ${escapeHtml((r[32]||"") + (r[11]||""))}
+              ${escapeHtml((r[32] || "") + (r[11] || ""))}
             </div>
             <div class="subtle mt-1">
-              HN: <b>${escapeHtml(r[13]||"-")}</b> &nbsp;|&nbsp; AN: <b>${escapeHtml(r[14]||"-")}</b>
+              HN: <b>${escapeHtml(r[13] || "-")}</b> &nbsp;|&nbsp; AN: <b>${escapeHtml(r[14] || "-")}</b>
             </div>
           </div>
           <div class="text-end">
@@ -1063,7 +1064,7 @@
             <div class="mini">
               <div class="label">Admit</div>
               <div class="fw-black">${escapeHtml(admitDate || "-")} ${escapeHtml(admitTime ? ("เวลา " + admitTime) : "")}</div>
-              <div class="subtle">${escapeHtml(admitType)} ${r[4]||r[7]||r[10] ? `| ต้นทาง: ${escapeHtml(r[4]||r[7]||r[10])}` : ""}</div>
+              <div class="subtle">${escapeHtml(admitType)} ${r[4] || r[7] || r[10] ? `| ต้นทาง: ${escapeHtml(r[4] || r[7] || r[10])}` : ""}</div>
             </div>
           </div>
           <div class="col-12 col-md-6">
@@ -1077,13 +1078,63 @@
       </div>
     `;
 
+    // ใส่ข้อมูลลงใน Modal Body
     document.getElementById('patientModalBody').innerHTML = html;
 
+    // จัดการปุ่มใน Modal Footer
+    const modalFooter = document.querySelector('#patientModal .modal-footer');
+    modalFooter.innerHTML = `
+      <button class="btn btn-outline-secondary rounded-pill" data-bs-dismiss="modal">ปิด</button>
+      <button class="btn btn-outline-primary rounded-pill" id="btnModalEdit">แก้ไข</button>
+      <button class="btn btn-danger rounded-pill" id="btnModalPDF">PDF</button>
+    `;
+
+    // เพิ่มปุ่ม "ยกเลิกจำหน่าย" เฉพาะเคสที่ D/C แล้ว
+    if (item.status === 'จำหน่ายแล้ว') {
+        const btnCancel = document.createElement('button');
+        btnCancel.className = 'btn btn-outline-danger rounded-pill ms-auto';
+        btnCancel.innerHTML = '🔄 ยกเลิกการจำหน่าย';
+        btnCancel.onclick = () => confirmCancelDischarge(item);
+        modalFooter.prepend(btnCancel);
+    }
+
+    // ผูกคำสั่งปุ่ม แก้ไข และ PDF
     document.getElementById('btnModalEdit').onclick = () => editPatient(item);
     document.getElementById('btnModalPDF').onclick = () => printPDF(item);
 
+    // สั่งเปิด Modal
     bootstrap.Modal.getOrCreateInstance(document.getElementById('patientModal')).show();
-  }
+}
+
+// 2. ฟังก์ชันยืนยันการยกเลิกการจำหน่าย
+async function confirmCancelDischarge(item) {
+    const result = await Swal.fire({
+        title: 'ยืนยันยกเลิกจำหน่าย?',
+        text: `ต้องการดึงเคสคุณ ${item.patientName} กลับมาเป็นผู้ป่วย Active ใช่หรือไม่?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc3545',
+        confirmButtonText: 'ใช่, ยกเลิกจำหน่าย',
+        cancelButtonText: 'ยกเลิก'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            Swal.fire({ title: 'กำลังประมวลผล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+            await callApi('cancelDischarge', {
+                targetSheet: currentSheet,
+                rowId: item.rowId
+            });
+
+            bootstrap.Modal.getInstance(document.getElementById('patientModal')).hide();
+            Swal.fire('สำเร็จ', 'ผู้ป่วยกลับมาสถานะ Active แล้ว', 'success');
+            loadDashboard(); // รีโหลดตารางข้อมูลใหม่
+        } catch (err) {
+            Swal.fire('ผิดพลาด', err.toString(), 'error');
+        }
+    }
+}
 
   // ================== Quick Discharge ==================
   async function dischargeUI(item) {
@@ -1171,6 +1222,7 @@
     bootstrap.Modal.getInstance(document.getElementById("dischargeModal")).hide();
     Swal.fire("สำเร็จ", "", "success");
     loadDashboard();
+    
   }
 
   // Enter = save เมื่อ modal เปิดอยู่
