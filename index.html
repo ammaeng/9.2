@@ -912,8 +912,7 @@
           <div class="btn-group">
             <button class="btn btn-sm btn-outline-primary btn-icon" data-action="edit" data-rowid="${item.rowId}" title="แก้ไข">✏️</button>
             <button class="btn btn-sm btn-outline-danger btn-icon" data-action="pdf" data-rowid="${item.rowId}" title="PDF">📄</button>
-            <button class="btn btn-sm btn-warning btn-icon" data-action="dis"" data-rowid="${item.rowId}" title="⚡ D/C (เลือกวันที่)">🏥</button>
-          </div>
+<button class="btn btn-sm btn-warning btn-icon" data-action="dis" data-rowid="${item.rowId}" title="จำหน่าย">🏥</button>          </div>
         </td>
       </tr>
     `;
@@ -1004,9 +1003,9 @@
         const act = btn.getAttribute('data-action');
         if(act === 'edit') return editPatient(item);
         if(act === 'pdf') return printPDF(item);
-        if(act === 'qdc') return quickDischargeUI(item); // B: choose date
-        return;
-        if(act === 'dis') return dischargeUI(item);
+      if(act === 'dis') return dischargeUI(item);
+if(act === 'edit') return editPatient(item);
+if(act === 'pdf') return printPDF(item);
       }
 
       // row click -> detail modal
@@ -1115,6 +1114,26 @@
 
   // ================== Quick Discharge (B) ==================
   async function dischargeUI(item){
+    didOpen: () => {
+
+const type = document.getElementById("disType")
+
+type.addEventListener("change", ()=>{
+
+const v = type.value
+
+document.getElementById("fu").style.display =
+(v=="dc") ? "block" : "none"
+
+document.getElementById("transferDept").style.display =
+(v=="transfer") ? "block" : "none"
+
+document.getElementById("referDest").style.display =
+(v=="refer") ? "block" : "none"
+
+})
+
+}
 
 const r = item.rawData || [];
 
