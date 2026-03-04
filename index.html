@@ -1006,6 +1006,7 @@
         if(act === 'pdf') return printPDF(item);
         if(act === 'qdc') return quickDischargeUI(item); // B: choose date
         return;
+        if(act === 'dis') return dischargeUI(item);
       }
 
       // row click -> detail modal
