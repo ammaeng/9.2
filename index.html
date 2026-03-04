@@ -1353,24 +1353,38 @@ async function confirmCancelDischarge(item) {
 
   // ✅ ฟังก์ชันเตรียมฟอร์มลงทะเบียนใหม่ (แก้ปัญหาปุ่มกดไม่ได้)
 async function prepareNewForm() {
-    document.getElementById('dataForm').reset();
-    document.getElementById('rowId').value = "";
-    document.getElementById('patientStatusStored').value = "";
-    document.getElementById('inType').value = "รับใหม่";
-    
-    // ดึงเลขลำดับถัดไปมาแสดงรอไว้
-    if (currentSheet) {
-        try {
-            const nextSeq = await callApi('getNextSeq', currentSheet);
-            document.getElementById('seq').value = nextSeq;
-        } catch (e) {
-            console.error(e);
-        }
+
+  document.getElementById('dataForm').reset();
+  document.getElementById('rowId').value = "";
+  document.getElementById('patientStatusStored').value = "";
+  document.getElementById('inType').value = "รับใหม่";
+
+  if (currentSheet) {
+
+    Swal.fire({
+      title: "กำลังเตรียมลำดับผู้ป่วย...",
+      html: `
+        <div style="font-size:50px">🧸</div>
+        <div style="margin-top:10px">วอร์ดเด็กกำลังเตรียมคิวให้หนูอยู่...</div>
+      `,
+      allowOutsideClick: false,
+      showConfirmButton: false,
+      didOpen: () => Swal.showLoading()
+    });
+
+    try {
+      const nextSeq = await callApi('getNextSeq', currentSheet);
+      document.getElementById('seq').value = nextSeq;
+    } catch(e){
+      console.error(e);
     }
 
-    const tab = new bootstrap.Tab(document.querySelector('button[data-bs-target="#form-pane"]'));
-    tab.show();
-    window.scrollTo(0, 0);
+    Swal.close();
+  }
+
+  const tab = new bootstrap.Tab(document.querySelector('button[data-bs-target="#form-pane"]'));
+  tab.show();
+  window.scrollTo(0,0);
 }
 
   function onSheetChange() {
