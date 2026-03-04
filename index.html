@@ -1561,117 +1561,10 @@ function editPatient(item) {
     }
   });
 
-  // ================== closeMonthUI (คงเดิมของคุณ) ==================
-  async function closeMonthUI() {
-    const { value: bedCount } = await Swal.fire({
-      title: 'ปิดยอดเดือน?',
-      text: 'ระบุจำนวนเตียงที่ใช้จริงในเดือนนี้:',
-      input: 'number',
-      inputValue: 20,
-      showCancelButton: true
-    });
 
-    if (bedCount) {
-      Swal.fire({ title: 'กำลังดำเนินการ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-      await callApi('closeMonthAction', { currentSheetName: currentSheet, bedCount: bedCount });
-      Swal.close();
-      initSheets();
-    }
-  }
 
-  // ================== showFullReport (คงเดิมของคุณ) ==================
-async function showFullReport(btn) {
-    lastTriggerEl = btn || document.activeElement;
-    lastTriggerEl?.blur?.();
-
-    Swal.fire({ title: 'คำนวณรายงานสรุป...', didOpen: () => Swal.showLoading() });
-
-    try {
-      const [patients, summary] = await Promise.all([
-        callApi('getAllData', currentSheet),
-        callApi('getMonthlySummaryRow', currentSheet)
-      ]);
-
-      document.getElementById('reportMonthTitle').innerText = currentSheet;
-      destroyReportCharts();
-      document.getElementById('reportResult').innerHTML = buildReportSkeleton(currentSheet);
-
-      // 1. BOR snapshot
-      if (summary) {
-        const borNum = parseFloat(String(summary.bor).replace('%','')) || 0;
-        const bedsNum = summary.beds ?? "-";
-
-        const borEl = document.getElementById('kpiBOR');
-        if (borEl) {
-          borEl.innerText = borNum.toFixed(2) + '%';
-          borEl.className =
-            'kpi-value ' +
-            (borNum > 90 ? 'text-danger' : (borNum > 70 ? 'text-success' : 'text-primary'));
-        }
-
-        const bedsSub = document.getElementById('kpiBedsSub');
-        if (bedsSub) bedsSub.innerHTML = `จากจำนวนเตียง <b>${bedsNum}</b> เตียง`;
-      }
-
-      // 2. KPI
-      const typeOf = (item) => ((item.patientStatus || item.rawData?.[0] || "").trim());
-      const carry = patients.filter(x => typeOf(x) === "ยอดยกมา").length;
-      const inNew = patients.filter(x => typeOf(x) === "รับใหม่").length;
-      const inTransfer = patients.filter(x => typeOf(x) === "รับย้าย").length;
-      const inRefer = patients.filter(x => typeOf(x) === "รับ Refer").length;
-      const inTotal = inNew + inTransfer + inRefer;
-
-      const outDC    = patients.filter(x => x.rawData?.[20]).length;
-      const outTO    = patients.filter(x => x.rawData?.[25]).length;
-      const outAbs   = patients.filter(x => x.rawData?.[26]).length;
-      const outRefu  = patients.filter(x => x.rawData?.[27]).length;
-      const outRO    = patients.filter(x => x.rawData?.[28]).length;
-      const outDeath = patients.filter(x => x.rawData?.[30]).length;
-      const outTotal = outDC + outTO + outAbs + outRefu + outRO + outDeath;
-      const eom = patients.filter(x => x.status === "ยังรักษาอยู่").length;
-      const patientDays = patients.reduce((s, x) => s + (safeInt(x.displayLOS)), 0);
-
-      document.getElementById('kpiCarry').innerText = carry;
-      document.getElementById('kpiInTotal').innerText = inTotal;
-      document.getElementById('kpiInNew').innerText = inNew;
-      document.getElementById('kpiInTransfer').innerText = inTransfer;
-      document.getElementById('kpiInRefer').innerText = inRefer;
-
-      document.getElementById('kpiOutTotal').innerText = outTotal;
-      document.getElementById('kpiOutDC').innerText = outDC;
-      document.getElementById('kpiOutTO').innerText = outTO;
-      document.getElementById('kpiOutRO').innerText = outRO;
-      document.getElementById('kpiOutDeath').innerText = outDeath;
-      document.getElementById('kpiOutAbs').innerText = outAbs;
-      document.getElementById('kpiOutRefu').innerText = outRefu;
-
-      document.getElementById('kpiEOM').innerText = eom;
-      document.getElementById('kpiPatientDays').innerText = patientDays;
-      document.getElementById('kpiALOSOut').innerText = (outTotal > 0) ? (patientDays / outTotal).toFixed(2) : "0.00";
-      document.getElementById('kpiALOSIn').innerText = (inTotal > 0) ? (patientDays / inTotal).toFixed(2) : "0.00";
-
-      repChartIn = new Chart(document.getElementById('repChartIn'), {
-        type: 'doughnut',
-        data: { labels: ['รับใหม่','รับย้าย','รับ Refer'], datasets: [{ data: [inNew, inTransfer, inRefer] }] },
-        options: { plugins: { legend: { position: 'bottom' } } }
-      });
-
-      repChartOut = new Chart(document.getElementById('repChartOut'), {
-        type: 'doughnut',
-        data: { labels: ['D/C','ย้ายออก','หนี','ปฏิเสธ','Refer Out','เสียชีวิต'], datasets: [{ data: [outDC, outTO, outAbs, outRefu, outRO, outDeath] }] },
-        options: { plugins: { legend: { position: 'bottom' } } }
-      });
-
-      Swal.close();
-      const modalEl = document.getElementById('reportModal');
-      const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-      modal.show();
-      setTimeout(() => modalEl.querySelector('.btn-close')?.focus(), 0);
-
-    } catch(err) {
-      Swal.fire('ผิดพลาด', err.toString(), 'error');
-    }
-  }  // ================== Report (PRO) ==================
+    // ================== Report (PRO) ==================
+// ================== Report (PRO) ==================
 function destroyReportCharts() {
   if (repChartIn) repChartIn.destroy();
   if (repChartOut) repChartOut.destroy();
@@ -1780,7 +1673,6 @@ function buildReportSkeleton(monthTitle) {
   `;
 }
 
-// ✅ รายงานสรุปเดือน (เรียก GAS: getAllData + getMonthlySummaryRow)
 async function showFullReport(btn) {
   lastTriggerEl = btn || document.activeElement;
   lastTriggerEl?.blur?.();
@@ -1802,7 +1694,6 @@ async function showFullReport(btn) {
     destroyReportCharts();
     document.getElementById('reportResult').innerHTML = buildReportSkeleton(currentSheet);
 
-    // BOR snapshot (จาก MonthlySummary)
     if (summary) {
       const borNum = parseFloat(String(summary.bor).replace('%', '')) || 0;
       const bedsNum = summary.beds ?? "-";
@@ -1819,7 +1710,6 @@ async function showFullReport(btn) {
       if (bedsSub) bedsSub.innerHTML = `จากจำนวนเตียง <b>${bedsNum}</b> เตียง`;
     }
 
-    // KPI คำนวณจาก patient list
     const typeOf = (item) => ((item.patientStatus || item.rawData?.[0] || "").trim());
 
     const carry = patients.filter(x => typeOf(x) === "ยอดยกมา").length;
@@ -1858,7 +1748,6 @@ async function showFullReport(btn) {
     document.getElementById('kpiALOSOut').innerText = (outTotal > 0) ? (patientDays / outTotal).toFixed(2) : "0.00";
     document.getElementById('kpiALOSIn').innerText = (inTotal > 0) ? (patientDays / inTotal).toFixed(2) : "0.00";
 
-    // charts
     repChartIn = new Chart(document.getElementById('repChartIn'), {
       type: 'doughnut',
       data: { labels: ['รับใหม่', 'รับย้าย', 'รับ Refer'], datasets: [{ data: [inNew, inTransfer, inRefer] }] },
@@ -1871,7 +1760,6 @@ async function showFullReport(btn) {
       options: { plugins: { legend: { position: 'bottom' } } }
     });
 
-    // LOS distribution
     const buckets = { "0": 0, "1-3": 0, "4-6": 0, "7-13": 0, "14-29": 0, "30+": 0 };
     patients.forEach(p => {
       const los = safeInt(p.displayLOS);
@@ -1890,15 +1778,13 @@ async function showFullReport(btn) {
     });
 
     Swal.close();
-    const modalEl = document.getElementById('reportModal');
-    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('reportModal')).show();
 
   } catch (err) {
     Swal.fire('ผิดพลาด', err.toString(), 'error');
   }
 }
 
-// ✅ ปิดยอดเดือน (เรียก GAS: closeMonthAction ด้วย payload object)
 async function closeMonthUI() {
   if (!currentSheet) {
     Swal.fire("ยังไม่ได้เลือกเดือน", "", "warning");
@@ -1915,7 +1801,7 @@ async function closeMonthUI() {
     cancelButtonText: 'ยกเลิก'
   });
 
-  if (bedCount === undefined) return; // cancel
+  if (bedCount === undefined) return;
 
   const beds = parseInt(bedCount, 10);
   if (isNaN(beds) || beds <= 0) {
@@ -1926,7 +1812,6 @@ async function closeMonthUI() {
   try {
     Swal.fire({ title: 'กำลังดำเนินการ...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
-    // *** สำคัญ: ส่งเป็น object ***
     await callApi('closeMonthAction', {
       currentSheetName: currentSheet,
       bedCount: beds
@@ -1940,7 +1825,18 @@ async function closeMonthUI() {
     Swal.fire('ผิดพลาด', err.toString(), 'error');
   }
 }
+
+// ✅ เพื่อความชัวร์: ผูกขึ้น global ให้ onclick ใช้ได้แน่
+window.prepareNewForm = prepareNewForm;
+window.showFullReport = showFullReport;
+window.closeMonthUI = closeMonthUI;
 </script>
+
+
+
+
+
+  
 <div class="modal fade" id="dischargeModal">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
