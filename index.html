@@ -1318,7 +1318,35 @@
       Swal.fire('ผิดพลาด', err.toString(), 'error');
     });
   }
+// ฟังก์ชันตรวจสอบ AN ซ้ำ และจัดรูปแบบอัตโนมัติ
+async function checkAN() {
+  // 1. จัดรูปแบบ AN ให้มีขีด (เช่น 6712 เป็น 67-12)
+  formatHNAN('an');
 
+  const anValue = document.getElementById('an').value;
+  const rowId = document.getElementById('rowId').value;
+
+  // 2. ถ้าเป็นการลงทะเบียนใหม่ (ไม่มี rowId) ให้เช็คซ้ำในระบบ
+  if (!rowId && anValue) {
+    try {
+      const isDup = await callApi('checkDuplicateAN', {
+        targetSheet: currentSheet,
+        an: anValue
+      });
+
+      if (isDup) {
+        Swal.fire({
+          title: 'พบข้อมูล AN ซ้ำ!',
+          text: `หมายเลข AN ${anValue} มีอยู่ในทะเบียนของเดือนนี้แล้ว กรุณาตรวจสอบอีกครั้ง`,
+          icon: 'warning',
+          confirmButtonColor: '#f89406'
+        });
+      }
+    } catch (err) {
+      console.error("Error checking duplicate AN:", err);
+    }
+  }
+}
   // ================== Edit / PDF (คงเดิมของคุณ) ==================
 function editPatient(item) {
     const r = item.rawData || [];
