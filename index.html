@@ -998,15 +998,16 @@
       const item = getItemByRowId(rowId);
       if(!item) return;
 
-      if(btn){
-        e.stopPropagation();
-        const act = btn.getAttribute('data-action');
-        if(act === 'edit') return editPatient(item);
-        if(act === 'pdf') return printPDF(item);
-      if(act === 'dis') return dischargeUI(item);
-if(act === 'edit') return editPatient(item);
-if(act === 'pdf') return printPDF(item);
-      }
+ if (btn) {
+  e.stopPropagation();
+  const act = btn.getAttribute('data-action');
+
+  if (act === 'edit') { await editPatient(item); return; }
+  if (act === 'pdf')  { await printPDF(item);  return; }
+  if (act === 'dis')  { await dischargeUI(item); return; }
+
+  return;
+}
 
       // row click -> detail modal
       openPatientModal(item);
@@ -1113,131 +1114,120 @@ if(act === 'pdf') return printPDF(item);
   }
 
   // ================== Quick Discharge (B) ==================
-  async function dischargeUI(item){
+async function dischargeUI(item){
+  const r = item.rawData || [];
+
+  const { value: form } = await Swal.fire({
+    title: 'จำหน่ายผู้ป่วย',
+    html: `
+      <select id="disType" class="swal2-input">
+        <option value="">--เลือกประเภท--</option>
+        <option value="dc">D/C</option>
+        <option value="transfer">ย้ายแผนก</option>
+        <option value="refer">Refer Out</option>
+        <option value="death">เสียชีวิต</option>
+        <option value="abscond">หนี</option>
+        <option value="refuse">ปฏิเสธ</option>
+      </select>
+
+      <input type="date" id="disDate" class="swal2-input">
+
+      <input type="text" id="disFU" class="swal2-input" placeholder="F/U (เฉพาะ D/C)">
+
+      <input type="text" id="transferDept" class="swal2-input" placeholder="ย้ายไปแผนก">
+
+      <input type="text" id="referDest" class="swal2-input" placeholder="Refer ไปที่">
+    `,
+    focusConfirm: false,
+    showCancelButton: true,
+    confirmButtonText: 'บันทึก',
+    cancelButtonText: 'ยกเลิก',
+
     didOpen: () => {
+      const typeEl = document.getElementById('disType');
+      const fuEl = document.getElementById('disFU');
+      const toEl = document.getElementById('transferDept');
+      const rdEl = document.getElementById('referDest');
 
-const type = document.getElementById("disType")
+      const apply = () => {
+        const v = typeEl.value;
+        fuEl.style.display = (v === 'dc') ? 'block' : 'none';
+        toEl.style.display = (v === 'transfer') ? 'block' : 'none';
+        rdEl.style.display = (v === 'refer') ? 'block' : 'none';
+      };
 
-type.addEventListener("change", ()=>{
+      typeEl.addEventListener('change', apply);
+      apply(); // ซ่อนตั้งแต่เปิด popup
+    },
 
-const v = type.value
+    preConfirm: () => {
+      const type = document.getElementById("disType").value;
+      const date = document.getElementById("disDate").value;
+      const fu   = document.getElementById("disFU").value;
+      const transferDept = document.getElementById("transferDept").value;
+      const referDest    = document.getElementById("referDest").value;
 
-document.getElementById("fu").style.display =
-(v=="dc") ? "block" : "none"
+      if (!type) return Swal.showValidationMessage("เลือกประเภทก่อน");
+      if (!date) return Swal.showValidationMessage("เลือกวันที่");
 
-document.getElementById("transferDept").style.display =
-(v=="transfer") ? "block" : "none"
+      if (type === "dc" && !fu.trim()) {
+        return Swal.showValidationMessage("ต้องกรอก F/U (กรณี D/C)");
+      }
 
-document.getElementById("referDest").style.display =
-(v=="refer") ? "block" : "none"
+      return { type, date, fu, transferDept, referDest };
+    }
+  });
 
-})
+  if (!form) return;
 
+  // ---- เตรียม payload upsert เฉพาะช่องที่เกี่ยว ----
+  const formData = {
+    rowId: item.rowId,
+    patientStatus: r[0],
+    hn: r[13],
+    an: r[14],
+    ward: r[15],
+    dx1: r[18],
+    dx2: r[19],
+    address: r[31]
+  };
+
+  const d = formatDateForSheet(form.date);
+
+  // clear outcome อื่น ๆ (กันซ้อน) -> ส่งเป็น "" ไปทับ
+  formData.dcDate = "";
+  formData.transferOutDate = "";
+  formData.transferOut = "";
+  formData.abscondDate = "";
+  formData.refuseDate = "";
+  formData.referOutDate = "";
+  formData.referDestination = "";
+  formData.deathDate = "";
+  formData.fu = "";
+
+  if (form.type === "dc") {
+    formData.dcDate = d;
+    formData.fu = form.fu;
+  }
+  if (form.type === "transfer") {
+    formData.transferOutDate = d;
+    formData.transferOut = form.transferDept;
+  }
+  if (form.type === "refer") {
+    formData.referOutDate = d;
+    formData.referDestination = form.referDest;
+  }
+  if (form.type === "death") formData.deathDate = d;
+  if (form.type === "abscond") formData.abscondDate = d;
+  if (form.type === "refuse") formData.refuseDate = d;
+
+  Swal.fire({ title:'กำลังบันทึก...', allowOutsideClick:false, didOpen: () => Swal.showLoading() });
+
+  await callApi('processData', { targetSheet: currentSheet, formData });
+
+  Swal.fire('สำเร็จ', '', 'success');
+  loadDashboard();
 }
-
-const r = item.rawData || [];
-
-const {value: form} = await Swal.fire({
-title:'จำหน่ายผู้ป่วย',
-html:`
-
-<select id="disType" class="swal2-input">
-<option value="">--เลือกประเภท--</option>
-<option value="dc">D/C</option>
-<option value="transfer">ย้ายแผนก</option>
-<option value="refer">Refer Out</option>
-<option value="death">เสียชีวิต</option>
-<option value="abscond">หนี</option>
-<option value="refuse">ปฏิเสธ</option>
-</select>
-
-<input type="date" id="disDate" class="swal2-input">
-
-<input type="text" id="fu" class="swal2-input" placeholder="F/U (เฉพาะ D/C)">
-
-<input type="text" id="transferDept" class="swal2-input" placeholder="ย้ายไปแผนก">
-
-<input type="text" id="referDest" class="swal2-input" placeholder="Refer ไปที่">
-
-`,
-focusConfirm:false,
-preConfirm:()=>{
-
-const type=document.getElementById("disType").value
-const date=document.getElementById("disDate").value
-const fu=document.getElementById("fu").value
-
-if(!type) return Swal.showValidationMessage("เลือกประเภทก่อน")
-
-if(!date) return Swal.showValidationMessage("เลือกวันที่")
-
-if(type=="dc" && !fu)
-return Swal.showValidationMessage("ต้องกรอก F/U")
-
-return{
-type,
-date,
-fu,
-transferDept:document.getElementById("transferDept").value,
-referDest:document.getElementById("referDest").value
-}
-
-}
-
-})
-
-if(!form) return
-
-let formData={
-rowId:item.rowId,
-patientStatus:r[0],
-hn:r[13],
-an:r[14],
-ward:r[15],
-dx1:r[18],
-dx2:r[19],
-address:r[31],
-fu:form.fu
-}
-
-const d=formatDateForSheet(form.date)
-
-if(form.type=="dc")
-formData.dcDate=d
-
-if(form.type=="transfer"){
-formData.transferOutDate=d
-formData.transferOut=form.transferDept
-}
-
-if(form.type=="refer"){
-formData.referOutDate=d
-formData.referDestination=form.referDest
-}
-
-if(form.type=="death")
-formData.deathDate=d
-
-if(form.type=="abscond")
-formData.abscondDate=d
-
-if(form.type=="refuse")
-formData.refuseDate=d
-
-
-Swal.fire({title:'กำลังบันทึก...',didOpen:()=>Swal.showLoading()})
-
-await callApi('processData',{
-targetSheet:currentSheet,
-formData
-})
-
-Swal.fire('สำเร็จ','','success')
-
-loadDashboard()
-
-}
-
   // ================== Export ==================
   function exportCSV(type){
     let filtered = lastData;
