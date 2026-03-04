@@ -912,7 +912,7 @@
           <div class="btn-group">
             <button class="btn btn-sm btn-outline-primary btn-icon" data-action="edit" data-rowid="${item.rowId}" title="แก้ไข">✏️</button>
             <button class="btn btn-sm btn-outline-danger btn-icon" data-action="pdf" data-rowid="${item.rowId}" title="PDF">📄</button>
-            <button class="btn btn-sm btn-warning btn-icon" data-action="qdc" data-rowid="${item.rowId}" title="⚡ D/C (เลือกวันที่)">⚡</button>
+            <button class="btn btn-sm btn-warning btn-icon" data-action="dis"" data-rowid="${item.rowId}" title="⚡ D/C (เลือกวันที่)">🏥</button>
           </div>
         </td>
       </tr>
@@ -1113,124 +1113,110 @@
   }
 
   // ================== Quick Discharge (B) ==================
-  async function quickDischargeUI(item){
-    const r = item.rawData || [];
-    if(item.status === "จำหน่ายแล้ว"){
-      return Swal.fire('ทำรายการไม่ได้', 'เคสนี้จำหน่ายแล้ว', 'info');
-    }
+  async function dischargeUI(item){
 
-    const { value: dcDate } = await Swal.fire({
-      title: '⚡ Quick D/C',
-      html: `<div class="subtle">เลือกวันที่จำหน่าย (ระบบจะบันทึกลงช่อง D/C วันที่)</div>`,
-      input: 'date',
-      inputValue: new Date().toISOString().slice(0,10),
-      showCancelButton: true,
-      confirmButtonText: 'บันทึก',
-      cancelButtonText: 'ยกเลิก'
-    });
+const r = item.rawData || [];
 
-    if(!dcDate) return;
+const {value: form} = await Swal.fire({
+title:'จำหน่ายผู้ป่วย',
+html:`
 
-    // Build formData from raw row so GS processData won't wipe fields
-    const nurseId = getNurseId();
+<select id="disType" class="swal2-input">
+<option value="">--เลือกประเภท--</option>
+<option value="dc">D/C</option>
+<option value="transfer">ย้ายแผนก</option>
+<option value="refer">Refer Out</option>
+<option value="death">เสียชีวิต</option>
+<option value="abscond">หนี</option>
+<option value="refuse">ปฏิเสธ</option>
+</select>
 
-    const existingStatus = (r[0] || "").trim();
-    // keep ยอดยกมา if it was carry; otherwise keep original status
-    const statusToSave = (existingStatus === "ยอดยกมา") ? "ยอดยกมา" : (existingStatus || "รับใหม่");
+<input type="date" id="disDate" class="swal2-input">
 
-    const admitType = r[2] ? "รับใหม่" : (r[5] ? "รับย้าย" : (r[8] ? "รับ Refer" : "รับใหม่"));
-    const inDate = formatDateForInput(r[2]||r[5]||r[8]);
-    const inTime = formatTimeForInput(r[3]||r[6]||r[9]);
-    const inDept = r[4]||r[7]||r[10]||"";
+<input type="text" id="fu" class="swal2-input" placeholder="F/U (เฉพาะ D/C)">
 
-    // construct marks
-    const formData = {
-      rowId: item.rowId,
-      seq: r[1] || "",
-      patientStatus: statusToSave,
+<input type="text" id="transferDept" class="swal2-input" placeholder="ย้ายไปแผนก">
 
-      prefix: r[32] || "",
-      patientName: r[11] || "",
-      gender: r[33] || "",
-      age: r[12] || "",
+<input type="text" id="referDest" class="swal2-input" placeholder="Refer ไปที่">
 
-      hn: r[13] || "",
-      an: r[14] || "",
-      ward: r[15] || "",
-      sai: r[16] || "",
-      sithi: r[17] || "",
-      dx1: r[18] || "",
-      dx2: r[19] || "",
-      address: r[31] || "",
+`,
+focusConfirm:false,
+preConfirm:()=>{
 
-      // keep old fields
-      fu: r[21] || "",
-      admitUnder6: r[22] || "",
-      los: "",
+const type=document.getElementById("disType").value
+const date=document.getElementById("disDate").value
+const fu=document.getElementById("fu").value
 
-      transferOut: r[24] || "",
-      referDestination: r[29] || "",
+if(!type) return Swal.showValidationMessage("เลือกประเภทก่อน")
 
-      // set DC date
-      dcDate: formatDateForSheet(dcDate),
+if(!date) return Swal.showValidationMessage("เลือกวันที่")
 
-      // keep other out dates (don’t delete)
-      deathDate: r[30] || "",
-      transferOutDate: r[25] || "",
-      abscondDate: r[26] || "",
-      refuseDate: r[27] || "",
-      referOutDate: r[28] || "",
+if(type=="dc" && !fu)
+return Swal.showValidationMessage("ต้องกรอก F/U")
 
-      // optional (future logging)
-      nurseId: nurseId || ""
-    };
+return{
+type,
+date,
+fu,
+transferDept:document.getElementById("transferDept").value,
+referDest:document.getElementById("referDest").value
+}
 
-    // preserve in marks depending on admitType
-    const iD = formatDateForSheet(inDate);
-    const iT = inTime || "";
-    const iDep = inDept || "";
+}
 
-    if(admitType === "รับใหม่"){
-      formData.newMark = r[2] || iD;
-      formData.newTime = r[3] || iT;
-      formData.newDept = r[4] || iDep;
-      formData.transferMark = r[5] || "";
-      formData.transferTime = r[6] || "";
-      formData.transferDept = r[7] || "";
-      formData.referMark = r[8] || "";
-      formData.referTime = r[9] || "";
-      formData.referDept = r[10] || "";
-    } else if(admitType === "รับย้าย"){
-      formData.transferMark = r[5] || iD;
-      formData.transferTime = r[6] || iT;
-      formData.transferDept = r[7] || iDep;
-      formData.newMark = r[2] || "";
-      formData.newTime = r[3] || "";
-      formData.newDept = r[4] || "";
-      formData.referMark = r[8] || "";
-      formData.referTime = r[9] || "";
-      formData.referDept = r[10] || "";
-    } else {
-      formData.referMark = r[8] || iD;
-      formData.referTime = r[9] || iT;
-      formData.referDept = r[10] || iDep;
-      formData.newMark = r[2] || "";
-      formData.newTime = r[3] || "";
-      formData.newDept = r[4] || "";
-      formData.transferMark = r[5] || "";
-      formData.transferTime = r[6] || "";
-      formData.transferDept = r[7] || "";
-    }
+})
 
-    Swal.fire({ title: 'กำลังบันทึก...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-    try{
-      await callApi('processData', { targetSheet: currentSheet, formData });
-      Swal.fire('สำเร็จ', 'บันทึก D/C แล้ว', 'success');
-      loadDashboard();
-    }catch(err){
-      Swal.fire('ผิดพลาด', err.toString(), 'error');
-    }
-  }
+if(!form) return
+
+let formData={
+rowId:item.rowId,
+patientStatus:r[0],
+hn:r[13],
+an:r[14],
+ward:r[15],
+dx1:r[18],
+dx2:r[19],
+address:r[31],
+fu:form.fu
+}
+
+const d=formatDateForSheet(form.date)
+
+if(form.type=="dc")
+formData.dcDate=d
+
+if(form.type=="transfer"){
+formData.transferOutDate=d
+formData.transferOut=form.transferDept
+}
+
+if(form.type=="refer"){
+formData.referOutDate=d
+formData.referDestination=form.referDest
+}
+
+if(form.type=="death")
+formData.deathDate=d
+
+if(form.type=="abscond")
+formData.abscondDate=d
+
+if(form.type=="refuse")
+formData.refuseDate=d
+
+
+Swal.fire({title:'กำลังบันทึก...',didOpen:()=>Swal.showLoading()})
+
+await callApi('processData',{
+targetSheet:currentSheet,
+formData
+})
+
+Swal.fire('สำเร็จ','','success')
+
+loadDashboard()
+
+}
 
   // ================== Export ==================
   function exportCSV(type){
