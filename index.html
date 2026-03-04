@@ -1144,20 +1144,20 @@ async function dischargeUI(item){
   modal.show()
 } 
 
-  document.getElementById("disType").addEventListener("change", toggleDisFields)
 
 function toggleDisFields(){
+  const typeEl = document.getElementById("disType");
+  if(!typeEl) return;
 
-  const t = document.getElementById("disType").value
+  const t = typeEl.value;
 
-  document.getElementById("fuBox").style.display =
-    t==="dc" ? "block":"none"
+  const fuBox = document.getElementById("fuBox");
+  const transferBox = document.getElementById("transferBox");
+  const referBox = document.getElementById("referBox");
 
-  document.getElementById("transferBox").style.display =
-    t==="transfer" ? "block":"none"
-
-  document.getElementById("referBox").style.display =
-    t==="refer" ? "block":"none"
+  if (fuBox) fuBox.style.display = (t==="dc") ? "block" : "none";
+  if (transferBox) transferBox.style.display = (t==="transfer") ? "block" : "none";
+  if (referBox) referBox.style.display = (t==="refer") ? "block" : "none";
 }
 
   async function saveDischarge(){
@@ -1320,6 +1320,21 @@ function toggleDisFields(){
 
     // bind table events once
     bindTableEvents();
+    // bind change ของ discharge modal หลัง DOM พร้อม
+  const disTypeEl = document.getElementById("disType");
+  if (disTypeEl) {
+    disTypeEl.addEventListener("change", toggleDisFields);
+  }
+
+  // (แนะนำ) เวลาเปิด modal ให้ set field ให้ถูกทุกครั้ง
+  const disModalEl = document.getElementById("dischargeModal");
+  if (disModalEl) {
+    disModalEl.addEventListener("shown.bs.modal", () => {
+      toggleDisFields();
+      document.getElementById("disType")?.focus?.();
+    });
+  }
+});
 
     // report modal focus restore
     const modalEl = document.getElementById('reportModal');
