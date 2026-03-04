@@ -987,36 +987,44 @@
     return lastDataByRowId.get(String(rowId)) || null;
   }
 
-  function bindTableEvents(){
-    // delegate on both bodies
-    const handler = async function(e){
-      const btn = e.target.closest('button[data-action]');
-      const tr = e.target.closest('tr[data-rowid]');
-      if(!tr) return;
+function bindTableEvents(){
 
-      const rowId = tr.getAttribute('data-rowid');
-      const item = getItemByRowId(rowId);
-      if(!item) return;
+  const carryBody = document.getElementById('carryBody');
+  const newBody = document.getElementById('newBody');
 
- if (btn) {
-  e.stopPropagation();
-  const act = btn.getAttribute('data-action');
+  // ป้องกัน bind ซ้ำ
+  carryBody.replaceWith(carryBody.cloneNode(true));
+  newBody.replaceWith(newBody.cloneNode(true));
 
-  if (act === 'edit') { await editPatient(item); return; }
-  if (act === 'pdf')  { await printPDF(item);  return; }
-  if (act === 'dis')  { await dischargeUI(item); return; }
+  const carryNew = document.getElementById('carryBody');
+  const newNew = document.getElementById('newBody');
 
-  return;
+  const handler = async function(e){
+    const btn = e.target.closest('button[data-action]');
+    const tr = e.target.closest('tr[data-rowid]');
+    if(!tr) return;
+
+    const rowId = tr.getAttribute('data-rowid');
+    const item = getItemByRowId(rowId);
+    if(!item) return;
+
+    if (btn) {
+      e.stopPropagation();
+      const act = btn.getAttribute('data-action');
+
+      if (act === 'edit') { await editPatient(item); return; }
+      if (act === 'pdf')  { await printPDF(item); return; }
+      if (act === 'dis')  { await dischargeUI(item); return; }
+
+      return;
+    }
+
+    openPatientModal(item);
+  };
+
+  carryNew.addEventListener('click', handler);
+  newNew.addEventListener('click', handler);
 }
-
-      // row click -> detail modal
-      openPatientModal(item);
-    };
-
-    document.getElementById('carryBody').addEventListener('click', handler);
-    document.getElementById('newBody').addEventListener('click', handler);
-  }
-
   // ================== Patient Detail Modal ==================
   function openPatientModal(item){
     const r = item.rawData || [];
@@ -1130,8 +1138,7 @@ async function dischargeUI(item){
         <option value="refuse">ปฏิเสธ</option>
       </select>
 
-      <input type="date" id="disDate" class="swal2-input">
-
+<input type="date" id="disDate" class="swal2-input" value="${new Date().toISOString().split('T')[0]}">
       <input type="text" id="disFU" class="swal2-input" placeholder="F/U (เฉพาะ D/C)">
 
       <input type="text" id="transferDept" class="swal2-input" placeholder="ย้ายไปแผนก">
@@ -1192,8 +1199,7 @@ async function dischargeUI(item){
     address: r[31]
   };
 
-  const d = formatDateForSheet(form.date);
-
+const d = formatDateForSheet(form.date || "");
   // clear outcome อื่น ๆ (กันซ้อน) -> ส่งเป็น "" ไปทับ
   formData.dcDate = "";
   formData.transferOutDate = "";
